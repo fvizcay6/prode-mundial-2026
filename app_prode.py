@@ -149,19 +149,21 @@ def enviar_correo_confirmacion(datos):
 def guardar_en_google_sheets(datos):
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
-        # --- AQUÍ ESTÁ EL CAMBIO IMPORTANTE ---
-        # Construimos el diccionario de credenciales leyendo los Secretos uno por uno
-        # Esto evita errores de formato TOML con JSONs complejos
+        # --- CORRECCIÓN AUTOMÁTICA DE LA CLAVE PRIVADA ---
+        # Esto arregla el error "No key could be detected"
+        clave_privada = st.secrets["gcp_service_account"]["private_key"].replace("\\n", "\n")
+
+        # Construimos las credenciales manualmente
         creds_dict = {
             "type": st.secrets["gcp_service_account"]["type"],
             "project_id": st.secrets["gcp_service_account"]["project_id"],
             "private_key_id": st.secrets["gcp_service_account"]["private_key_id"],
-            "private_key": st.secrets["gcp_service_account"]["private_key"],
+            "private_key": clave_privada, # <--- USAMOS LA CLAVE CORREGIDA
             "client_email": st.secrets["gcp_service_account"]["client_email"],
             "client_id": st.secrets["gcp_service_account"]["client_id"],
-            "auth_uri": st.secrets["gcp_service_account"]["auth_uri"],
-            "token_uri": st.secrets["gcp_service_account"]["token_uri"],
-            "auth_provider_x509_cert_url": st.secrets["gcp_service_account"]["auth_provider_x509_cert_url"],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
             "client_x509_cert_url": st.secrets["gcp_service_account"]["client_x509_cert_url"]
         }
 
@@ -173,11 +175,17 @@ def guardar_en_google_sheets(datos):
             datos["Fecha"], datos["Participante"], datos["Email"],
             datos["DNI"], datos["Edad"], datos["Direccion"]
         ]
+        
+        # Partidos
         for grupo in GRUPOS:
             codigo = grupo.split(" ")[1]
             for i in range(1, 7): fila.append(datos.get(f"P_G{codigo}_{i}", "-"))
+
+        # Posiciones
         for grupo in GRUPOS:
             fila.extend([datos[f"{grupo}_1"], datos[f"{grupo}_2"], datos[f"{grupo}_3"]])
+            
+        # Playoffs y Podio
         fila.append(", ".join(datos["Octavos"]))
         fila.append(", ".join(datos["Cuartos"]))
         fila.append(", ".join(datos["Semis"]))
@@ -186,6 +194,7 @@ def guardar_en_google_sheets(datos):
         sheet.append_row(fila)
         return True
     except Exception as e:
+        # Mostramos el error detallado en pantalla para saber qué pasa
         st.error(f"❌ Error conectando a Google Sheets: {e}")
         return False
 
