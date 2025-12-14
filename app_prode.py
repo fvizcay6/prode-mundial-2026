@@ -7,6 +7,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
+import json  # <--- IMPORTANTE: Nueva librería para leer el JSON
 
 # ==========================================
 # 1. CONFIGURACIÓN VISUAL
@@ -88,11 +89,11 @@ TODOS_LOS_EQUIPOS = sorted([eq for lista in GRUPOS.values() for eq in lista])
 FIXTURE_INDICES = [(0,1), (2,3), (0,2), (1,3), (0,3), (1,2)]
 
 # ==========================================
-# 3. FUNCIONES DE CONEXIÓN (MODIFICADO PARA SECRETS)
+# 3. FUNCIONES DE CONEXIÓN (NUEVA VERSIÓN JSON)
 # ==========================================
 def enviar_correo_confirmacion(datos):
-    # LEER DATOS DE EMAIL DESDE SECRETS
     try:
+        # Busca las credenciales de email en los secretos
         email_origen = st.secrets["email_credentials"]["EMAIL_ORIGEN"]
         password_app = st.secrets["email_credentials"]["PASSWORD_APP"]
     except:
@@ -149,47 +150,29 @@ def enviar_correo_confirmacion(datos):
 def guardar_en_google_sheets(datos):
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
-        # --- REPARADOR AUTOMÁTICO DE CLAVE PRIVADA ---
-        # 1. Leemos la clave tal cual está en los secretos
-        clave_raw = st.secrets["gcp_service_account"]["private_key"]
+        # --- NUEVO MÉTODO ROBUSTO ---
+        # 1. Leemos el contenido del archivo JSON entero desde Secrets (como texto)
+        contenido_json_texto = st.secrets["google_json"]["contenido_archivo"]
         
-        # 2. Corregimos los saltos de línea literales (\n) por saltos reales
-        clave_reparada = clave_raw.replace("\\n", "\n")
-        
-        # 3. VERIFICACIÓN CRÍTICA: Si faltan los encabezados, los agregamos nosotros
-        if "-----BEGIN PRIVATE KEY-----" not in clave_reparada:
-            clave_reparada = "-----BEGIN PRIVATE KEY-----\n" + clave_reparada.strip() + "\n-----END PRIVATE KEY-----"
-            
-        # Construimos las credenciales con la clave ya reparada
-        creds_dict = {
-            "type": st.secrets["gcp_service_account"]["type"],
-            "project_id": st.secrets["gcp_service_account"]["project_id"],
-            "private_key_id": st.secrets["gcp_service_account"]["private_key_id"],
-            "private_key": clave_reparada,  # <--- Usamos la versión reparada
-            "client_email": st.secrets["gcp_service_account"]["client_email"],
-            "client_id": st.secrets["gcp_service_account"]["client_id"],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": st.secrets["gcp_service_account"]["client_x509_cert_url"]
-        }
+        # 2. Convertimos ese texto a un diccionario de Python usando la librería json
+        # Esto maneja automáticamente los saltos de línea y formatos raros
+        creds_dict = json.loads(contenido_json_texto)
 
+        # 3. Autenticamos
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
         sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
         
+        # Armado de la fila
         fila = [
             datos["Fecha"], datos["Participante"], datos["Email"],
             datos["DNI"], datos["Edad"], datos["Direccion"]
         ]
-        
         for grupo in GRUPOS:
             codigo = grupo.split(" ")[1]
             for i in range(1, 7): fila.append(datos.get(f"P_G{codigo}_{i}", "-"))
-
         for grupo in GRUPOS:
             fila.extend([datos[f"{grupo}_1"], datos[f"{grupo}_2"], datos[f"{grupo}_3"]])
-            
         fila.append(", ".join(datos["Octavos"]))
         fila.append(", ".join(datos["Cuartos"]))
         fila.append(", ".join(datos["Semis"]))
@@ -198,8 +181,7 @@ def guardar_en_google_sheets(datos):
         sheet.append_row(fila)
         return True
     except Exception as e:
-        # Si falla, mostramos el error en pantalla para diagnosticar
-        st.error(f"❌ Error detalle: {e}")
+        st.error(f"❌ Error conectando a Google Sheets: {e}")
         return False
 
 # ==========================================
