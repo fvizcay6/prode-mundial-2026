@@ -45,7 +45,6 @@ st.markdown("""
         font-size: 18px; text-transform: uppercase; width: 100%; border-radius: 8px; margin-top: 20px;
     }
     .stTextInput input, .stNumberInput input { background-color: #222; color: white; border: 1px solid #555; border-radius: 5px; }
-    /* Mensajes de error/warning personalizados */
     .stAlert { background-color: #222; color: white; border: 1px solid #555; }
     </style>
 """, unsafe_allow_html=True)
@@ -64,7 +63,7 @@ with c_logo:
     if os.path.exists("logo.jpg"): st.image("logo.jpg", use_container_width=True)
     elif os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
 with c_tit:
-    st.title("FIFA WORLD CUP USA-MEXICO-CANADA 2026")
+    st.title("FIFA WORLD CUP 2026")
     st.markdown("### OFFICIAL PREDICTION GAME")
 
 # ==========================================
@@ -72,7 +71,6 @@ with c_tit:
 # ==========================================
 NOMBRE_HOJA_GOOGLE = "DB_Prode_2026"
 
-# GRUPOS
 GRUPOS = {
     "GRUPO A": ["🇲🇽 MEXICO", "🇿🇦 SUDAFRICA", "🇰🇷 COREA DEL SUR", "🌍 REP. EUR (DIN/MACE)"],
     "GRUPO B": ["🇨🇦 CANADA", "🌍 REP. EUR (ITA/BOS)", "🇶🇦 QATAR", "🇨🇭 SUIZA"],
@@ -91,7 +89,7 @@ TODOS_LOS_EQUIPOS = sorted([eq for lista in GRUPOS.values() for eq in lista])
 FIXTURE_INDICES = [(0,1), (2,3), (0,2), (1,3), (0,3), (1,2)]
 
 # ==========================================
-# 3. FUNCIONES DE CONEXIÓN
+# 3. FUNCIONES DE CONEXIÓN Y VALIDACIÓN
 # ==========================================
 def enviar_correo_confirmacion(datos):
     try:
@@ -168,6 +166,32 @@ def enviar_correo_confirmacion(datos):
         st.error(f"❌ Error enviando email: {e}")
         return False
 
+def validar_duplicados_en_sheet(dni_input, email_input):
+    """Verifica si el DNI o Email ya existen en Google Sheets"""
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    try:
+        contenido_json_texto = st.secrets["google_json"]["contenido_archivo"]
+        creds_dict = json.loads(contenido_json_texto, strict=False)
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        client = gspread.authorize(creds)
+        sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
+        
+        # Obtenemos columnas completas (DNI está en col 4, Email en col 3)
+        # OJO: Depende del orden en 'guardar_en_google_sheets'
+        # [Fecha, Participante, Email, DNI, ...]
+        lista_emails = sheet.col_values(3)
+        lista_dnis = sheet.col_values(4)
+        
+        if dni_input in lista_dnis:
+            return False, f"⚠️ El DNI {dni_input} ya está registrado en el torneo."
+        
+        if email_input in lista_emails:
+            return False, f"⚠️ El correo {email_input} ya fue utilizado."
+            
+        return True, "OK"
+    except Exception as e:
+        return False, f"Error validando base de datos: {e}"
+
 def guardar_en_google_sheets(datos):
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
@@ -198,43 +222,37 @@ def guardar_en_google_sheets(datos):
         return False
 
 # ==========================================
-# 4. REGLAMENTO (NUEVA SECCIÓN BLOQUEANTE)
+# 4. REGLAMENTO Y DATOS
 # ==========================================
 st.markdown("---")
 st.subheader("📜 REGLAMENTO Y CONDICIONES")
-
 reglamento_texto = """
-1. **Inscripción:** La participación es válida únicamente tras completar este formulario y el pago de la inscripción.
-2. **Puntuación:**
-   - Acierto exacto de resultado (Gana/Empata/Pierde): **3 Puntos**.
-   - Acierto de clasificados a Octavos: **5 Puntos por equipo**.
-   - Acierto de Campeón: **20 Puntos**.
-3. **Cierre:** Se aceptarán respuestas hasta 1 hora antes del partido inaugural.
-4. **Premios:** El 1er puesto se lleva el 70% del pozo, el 2do el 20% y el 3ero el 10%.
-5. **Desempate:** En caso de empate en puntos, gana quien haya acertado al Campeón.
+1. **Inscripción:** La participación es válida tras completar formulario y pago.
+2. **Puntuación:** Gana/Empata/Pierde: 3pts | Clasificados Octavos: 5pts | Campeón: 20pts.
+3. **Control:** No se permiten múltiples inscripciones por DNI o Email.
+4. **Premios:** 1º (70%), 2º (20%), 3º (10%).
 """
-
 st.info(reglamento_texto)
-acepta_terminos = st.checkbox("✅ He leído, comprendo y ACEPTO el reglamento del juego.")
+acepta_terminos = st.checkbox("✅ He leído, comprendo y ACEPTO el reglamento.")
 
 if not acepta_terminos:
-    st.warning("⚠️ Debes aceptar el reglamento para desbloquear el formulario de inscripción.")
+    st.warning("⚠️ Debes aceptar el reglamento para continuar.")
     st.stop()
 
-# ==========================================
-# 5. DATOS PERSONALES
-# ==========================================
 st.markdown("---")
 st.subheader("👤 DATOS DEL PARTICIPANTE")
 c1, c2 = st.columns(2)
 nombre = c1.text_input("Nombre y Apellido")
-dni = c2.text_input("DNI / Documento")
+dni_raw = c2.text_input("DNI / Documento (Sin puntos)")
 email = c1.text_input("Correo Electrónico")
 direccion = c2.text_input("Localidad / Dirección")
 edad = c1.number_input("Edad", 0, 100, step=1)
 
+# Limpieza básica de datos en vivo
+dni = dni_raw.replace(".", "").strip() # Quita puntos y espacios
+
 # ==========================================
-# 6. JUEGO: FASE DE GRUPOS
+# 5. JUEGO (GRUPOS Y FINALES)
 # ==========================================
 st.markdown("---")
 st.header("1. FASE DE GRUPOS")
@@ -263,31 +281,16 @@ for nombre_grupo, equipos in GRUPOS.items():
             seleccion_grupos[nombre_grupo] = [p1, p2, p3]
     idx_col += 1
 
-# ==========================================
-# 7. JUEGO: FASES FINALES (MEJORADO)
-# ==========================================
 st.divider()
 st.header("2. FASES FINALES")
-
-# --- LÓGICA INTELIGENTE AQUÍ ---
-# 1. Recopilamos todos los equipos que el usuario puso como 1, 2 o 3 en los grupos
 equipos_clasificados = []
 for lista_equipos in seleccion_grupos.values():
     for equipo in lista_equipos:
-        if equipo != "-": # Ignoramos los guiones
-            equipos_clasificados.append(equipo)
-
-# 2. Ordenamos alfabéticamente y quitamos duplicados
+        if equipo != "-": equipos_clasificados.append(equipo)
 equipos_clasificados = sorted(list(set(equipos_clasificados)))
 
-# 3. Mensaje si la lista está vacía o incompleta
-if len(equipos_clasificados) < 32: # Deberían ser más, pero avisamos si hay pocos
-    st.info("ℹ️ Completa las posiciones (1º, 2º y 3º) de todos los grupos arriba para ver a tus equipos aquí.")
-
-# 4. Usamos la lista filtrada en el multiselect
-octavos = st.multiselect(f"Octavos de Final (Elige 16 de tus {len(equipos_clasificados)} clasificados)", equipos_clasificados, max_selections=16)
-
-# El resto sigue dependiendo de lo que se elija en Octavos
+if len(equipos_clasificados) < 32: st.info("ℹ️ Completa las posiciones de todos los grupos para ver a tus equipos aquí.")
+octavos = st.multiselect(f"Octavos ({len(equipos_clasificados)} clasificados)", equipos_clasificados, max_selections=16)
 cuartos = st.multiselect("Cuartos (8)", octavos if len(octavos)==16 else [], max_selections=8)
 semis = st.multiselect("Semis (4)", cuartos if len(cuartos)==8 else [], max_selections=4)
 
@@ -300,12 +303,17 @@ subcampeon = c2.selectbox("🥈 SUBCAMPEÓN", ["-"]+opc_final)
 tercero = c3.selectbox("🥉 3ER PUESTO", ["-"]+opc_final)
 
 # ==========================================
-# 8. BOTÓN DE ENVÍO
+# 6. BOTÓN DE ENVÍO CON VALIDACIÓN
 # ==========================================
 st.markdown("---")
 if st.button("ENVIAR PRONÓSTICO 🚀", type="primary"):
     errores = []
+    # Validaciones básicas
     if not nombre or not dni or not email: errores.append("⚠️ Faltan datos personales.")
+    if "@" not in email: errores.append("⚠️ El correo electrónico no parece válido.")
+    if len(dni) < 6 or not dni.isdigit(): errores.append("⚠️ El DNI debe contener solo números (mínimo 6).")
+    
+    # Validaciones del juego
     for g, e in seleccion_grupos.items():
         if "-" in e or len(set(e))!=3: errores.append(f"Revisar {g}")
     if len(octavos)!=16 or len(cuartos)!=8 or len(semis)!=4: errores.append("Falta completar Playoffs.")
@@ -314,23 +322,31 @@ if st.button("ENVIAR PRONÓSTICO 🚀", type="primary"):
     if errores:
         for e in errores: st.error(e)
     else:
-        datos_flat = {f"{g}_{i+1}": eq for g, lista in seleccion_grupos.items() for i, eq in enumerate(lista)}
-        datos_finales = {
-            "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "Participante": nombre, "Email": email, "DNI": dni, "Edad": edad, "Direccion": direccion,
-            **resultados_partidos, **datos_flat,
-            "Octavos": octavos, "Cuartos": cuartos, "Semis": semis,
-            "Campeon": campeon, "Subcampeon": subcampeon, "Tercero": tercero
-        }
+        # SI PASA LAS VALIDACIONES BÁSICAS, CHEQUEAMOS DUPLICADOS EN LA NUBE
+        with st.spinner("Verificando disponibilidad de usuario..."):
+            es_valido, mensaje_validacion = validar_duplicados_en_sheet(dni, email)
         
-        with st.spinner("Procesando..."):
-            guardo_ok = guardar_en_google_sheets(datos_finales)
-            if guardo_ok:
-                st.success("✅ ¡Datos guardados correctamente en la Base de Datos!")
-                email_ok = enviar_correo_confirmacion(datos_finales)
-                if email_ok:
-                    st.success(f"📧 ¡Correo de confirmación enviado a {email}!")
-                    st.balloons()
-                else:
-                    st.warning("⚠️ Tus datos se guardaron, pero falló el envío del email.")
-                    st.info("Revisa el mensaje de error rojo arriba para saber la causa.")
+        if not es_valido:
+            # Si ya existe, mostramos error y paramos
+            st.error(mensaje_validacion)
+        else:
+            # Si no existe, procedemos a guardar
+            datos_flat = {f"{g}_{i+1}": eq for g, lista in seleccion_grupos.items() for i, eq in enumerate(lista)}
+            datos_finales = {
+                "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Participante": nombre, "Email": email, "DNI": dni, "Edad": edad, "Direccion": direccion,
+                **resultados_partidos, **datos_flat,
+                "Octavos": octavos, "Cuartos": cuartos, "Semis": semis,
+                "Campeon": campeon, "Subcampeon": subcampeon, "Tercero": tercero
+            }
+            
+            with st.spinner("Guardando pronóstico..."):
+                guardo_ok = guardar_en_google_sheets(datos_finales)
+                if guardo_ok:
+                    st.success("✅ ¡Datos guardados correctamente!")
+                    email_ok = enviar_correo_confirmacion(datos_finales)
+                    if email_ok:
+                        st.success(f"📧 ¡Correo enviado a {email}!")
+                        st.balloons()
+                    else:
+                        st.warning("⚠️ Datos guardados, pero falló el email.")
