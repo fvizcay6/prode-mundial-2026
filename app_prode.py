@@ -7,7 +7,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
-import json  # Librería esencial
+import json  # Librería esencial para leer el JSON completo
 
 # ==========================================
 # 1. CONFIGURACIÓN VISUAL
@@ -89,14 +89,14 @@ TODOS_LOS_EQUIPOS = sorted([eq for lista in GRUPOS.values() for eq in lista])
 FIXTURE_INDICES = [(0,1), (2,3), (0,2), (1,3), (0,3), (1,2)]
 
 # ==========================================
-# 3. FUNCIONES DE CONEXIÓN (CORREGIDO PARA STRICT=FALSE)
+# 3. FUNCIONES DE CONEXIÓN
 # ==========================================
 def enviar_correo_confirmacion(datos):
     try:
         email_origen = st.secrets["email_credentials"]["EMAIL_ORIGEN"]
         password_app = st.secrets["email_credentials"]["PASSWORD_APP"]
     except:
-        st.error("Error: No se encontraron las credenciales de Email en Secrets.")
+        st.error("⚠️ Configuración: No se encontraron las credenciales de Email en Secrets.")
         return False
 
     destinatario = datos["Email"]
@@ -136,6 +136,8 @@ def enviar_correo_confirmacion(datos):
         msg['To'] = destinatario
         msg['Subject'] = asunto
         msg.attach(MIMEText(cuerpo, 'html'))
+        
+        # Conexión al servidor Gmail
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(email_origen, password_app)
@@ -143,26 +145,21 @@ def enviar_correo_confirmacion(datos):
         server.quit()
         return True
     except Exception as e:
-        print(f"Error mail: {e}")
+        # AQUI MOSTRAMOS EL ERROR EN PANTALLA
+        st.error(f"❌ Error enviando email: {e}")
         return False
 
 def guardar_en_google_sheets(datos):
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
-        # --- AQUÍ ESTÁ EL TRUCO ---
-        # 1. Leemos el texto de los secretos
+        # Lectura del JSON completo con tolerancia a caracteres especiales
         contenido_json_texto = st.secrets["google_json"]["contenido_archivo"]
-        
-        # 2. Usamos strict=False para permitir caracteres de control (como los Enters invisibles)
-        # Esto soluciona el error "Invalid control character"
         creds_dict = json.loads(contenido_json_texto, strict=False)
 
-        # 3. Autenticamos
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
         sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
         
-        # Armado de fila
         fila = [
             datos["Fecha"], datos["Participante"], datos["Email"],
             datos["DNI"], datos["Edad"], datos["Direccion"]
@@ -255,8 +252,20 @@ if st.button("ENVIAR PRONÓSTICO 🚀", type="primary"):
             "Octavos": octavos, "Cuartos": cuartos, "Semis": semis,
             "Campeon": campeon, "Subcampeon": subcampeon, "Tercero": tercero
         }
-        with st.spinner("Guardando..."):
-            if guardar_en_google_sheets(datos_finales):
-                enviar_correo_confirmacion(datos_finales)
-                st.success(f"¡ENVIADO CORRECTAMENTE A {email}!")
-                st.balloons()
+        
+        with st.spinner("Procesando..."):
+            # 1. Intentar Guardar en Google Sheets
+            guardo_ok = guardar_en_google_sheets(datos_finales)
+            
+            if guardo_ok:
+                st.success("✅ ¡Datos guardados correctamente en la Base de Datos!")
+                
+                # 2. Intentar Enviar Email (Solo si se guardó bien)
+                email_ok = enviar_correo_confirmacion(datos_finales)
+                
+                if email_ok:
+                    st.success(f"📧 ¡Correo de confirmación enviado a {email}!")
+                    st.balloons()
+                else:
+                    st.warning("⚠️ Tus datos se guardaron, pero falló el envío del email.")
+                    st.info("Revisa el mensaje de error rojo arriba para saber la causa.")
