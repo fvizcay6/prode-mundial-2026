@@ -7,7 +7,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
-import json  # <--- IMPORTANTE: Nueva librería para leer el JSON
+import json  # Librería esencial
 
 # ==========================================
 # 1. CONFIGURACIÓN VISUAL
@@ -89,11 +89,10 @@ TODOS_LOS_EQUIPOS = sorted([eq for lista in GRUPOS.values() for eq in lista])
 FIXTURE_INDICES = [(0,1), (2,3), (0,2), (1,3), (0,3), (1,2)]
 
 # ==========================================
-# 3. FUNCIONES DE CONEXIÓN (NUEVA VERSIÓN JSON)
+# 3. FUNCIONES DE CONEXIÓN (CORREGIDO PARA STRICT=FALSE)
 # ==========================================
 def enviar_correo_confirmacion(datos):
     try:
-        # Busca las credenciales de email en los secretos
         email_origen = st.secrets["email_credentials"]["EMAIL_ORIGEN"]
         password_app = st.secrets["email_credentials"]["PASSWORD_APP"]
     except:
@@ -150,20 +149,20 @@ def enviar_correo_confirmacion(datos):
 def guardar_en_google_sheets(datos):
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
-        # --- NUEVO MÉTODO ROBUSTO ---
-        # 1. Leemos el contenido del archivo JSON entero desde Secrets (como texto)
+        # --- AQUÍ ESTÁ EL TRUCO ---
+        # 1. Leemos el texto de los secretos
         contenido_json_texto = st.secrets["google_json"]["contenido_archivo"]
         
-        # 2. Convertimos ese texto a un diccionario de Python usando la librería json
-        # Esto maneja automáticamente los saltos de línea y formatos raros
-        creds_dict = json.loads(contenido_json_texto)
+        # 2. Usamos strict=False para permitir caracteres de control (como los Enters invisibles)
+        # Esto soluciona el error "Invalid control character"
+        creds_dict = json.loads(contenido_json_texto, strict=False)
 
         # 3. Autenticamos
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
         sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
         
-        # Armado de la fila
+        # Armado de fila
         fila = [
             datos["Fecha"], datos["Participante"], datos["Email"],
             datos["DNI"], datos["Edad"], datos["Direccion"]
