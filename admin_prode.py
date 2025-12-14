@@ -35,6 +35,20 @@ st.header("👮‍♂️ PANEL DE CONTROL Y PUNTUACIÓN")
 # ==========================================
 # 2. FUNCIÓN DE CÁLCULO (EL MOTOR DE PUNTOS)
 # ==========================================
+
+# Función auxiliar para limpiar la entrada de las fases finales
+def limpiar_prediccion_fase(datos_usuario, fase):
+    """
+    Obtiene la predicción de una fase final (Octavos, Cuartos, Semis)
+    y la limpia para ser robusta:
+    1. Quita espacios al inicio/fin.
+    2. Convierte el string separado por comas en una lista.
+    3. Elimina elementos vacíos resultantes (como [''] o elementos de solo espacios).
+    """
+    input_str = datos_usuario.get(fase, "")
+    # Usa list comprehension para limpiar y filtrar elementos vacíos
+    return [x.strip() for x in input_str.split(", ") if x.strip()]
+
 def calcular_puntaje_participante(datos_usuario, reales):
     puntos = 0
     desglose = {}
@@ -86,28 +100,28 @@ def calcular_puntaje_participante(datos_usuario, reales):
     # Inicializar contadores detallados
     pts_octavos = 0
     pts_cuartos = 0
-    pts_semis_base = 0 # Pts por Semifinal (Regla 1-f)
-    pts_tercer_puesto = 0 # Incluye 30 Pts por equipo + 35 Pts por ganador (Regla 1-g)
-    pts_final_campeon = 0 # Incluye 40 Pts por finalistas + 50 Pts por Campeón (Regla 1-h/i)
+    pts_semis_base = 0 
+    pts_tercer_puesto = 0 
+    pts_final_campeon = 0 
     
-    # D: Octavos (15 pts)
-    u_octavos = datos_usuario.get("Octavos", "").split(", ")
+    # D: Octavos (15 pts) - USAMOS LIMPIEZA
+    u_octavos = limpiar_prediccion_fase(datos_usuario, "Octavos")
     for eq in u_octavos:
         if eq in reales["OCTAVOS"]: pts_octavos += 15
         
-    # E: Cuartos (20 pts)
-    u_cuartos = datos_usuario.get("Cuartos", "").split(", ")
+    # E: Cuartos (20 pts) - USAMOS LIMPIEZA
+    u_cuartos = limpiar_prediccion_fase(datos_usuario, "Cuartos")
     for eq in u_cuartos:
         if eq in reales["CUARTOS"]: pts_cuartos += 20
 
-    # F: Semis (25 pts) + G: 3er Puesto (30 pts por jugar)
-    u_semis = datos_usuario.get("Semis", "").split(", ")
+    # F: Semis (25 pts) + G: 3er Puesto (30 pts por jugar) - USAMOS LIMPIEZA
+    u_semis = limpiar_prediccion_fase(datos_usuario, "Semis")
     for eq in u_semis:
         if eq in reales["SEMIS"]: 
             pts_semis_base += 25 # Regla 1-f: 25 Pts por semifinalista
             
             # Regla 1-g (30 Pts por jugar el 3er puesto):
-            # Si el equipo fue semifinalista PERO NO fue Campeón ni Subcampeón, jugó el 3er puesto.
+            # Si el equipo fue semifinalista PERO NO fue Campeón ni Subcampeón
             if eq != reales["CAMPEON"] and eq != reales["SUBCAMPEON"] and reales["CAMPEON"] != "-":
                 pts_tercer_puesto += 30 
                 
@@ -159,7 +173,7 @@ semis_reales = []
 tercero_ganador_real = "-"
 finalistas_reales = []
 campeon_real = "-"
-subcampeon_real = "-" # Necesitamos el subcampeón para la regla del 3er puesto
+subcampeon_real = "-" 
 
 # --- CARGA GRUPOS ---
 for nombre_grupo, equipos in GRUPOS.items():
@@ -244,7 +258,6 @@ with col_sub:
 with col_ter:
     tercero_ganador_real = st.selectbox("🥉 3ER PUESTO REAL (Regla 1-g: 35 Pts)", ["-"]+opc_podio, key="Real_3ro_Ganador")
     
-    # Usamos esta lista solo para mostrar el desglose, no afecta el cálculo
     jugaron_tercero = [eq for eq in semis_reales if eq not in [campeon_real, subcampeon_real] and eq != "-"]
     tercero_equipos_reales = jugaron_tercero
             
@@ -297,7 +310,6 @@ if st.button("🔄 CALCULAR PUNTAJES Y ACTUALIZAR TABLA"):
             tabla = []
             
             for usuario in datos_usuarios:
-                # El cálculo detallado se hace aquí:
                 puntajes = calcular_puntaje_participante(usuario, RESULTADOS_REALES_DINAMICO)
                 
                 fila = {
@@ -316,8 +328,6 @@ if st.button("🔄 CALCULAR PUNTAJES Y ACTUALIZAR TABLA"):
             # Crear DataFrame y Ordenar aplicando Reglas de Desempate (Regla 3-j)
             df = pd.DataFrame(tabla)
             
-            # Criterios de desempate
-            # Creamos una columna temporal de Pts Playoffs para el desempate 2º (Regla 3-j)
             df['Playoffs_Desempate'] = df['Octavos'] + df['Cuartos'] + df['Semifinales'] + df['3er Puesto'] + df['Final/Campeon']
             
             # Orden: 1. TOTAL, 2. Pts Grupos, 3. Pts Playoffs_Desempate
