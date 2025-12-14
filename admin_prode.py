@@ -157,8 +157,7 @@ for nombre_grupo, equipos in GRUPOS.items():
                         f"P_G{codigo}_{i+1}", 
                         ["-", "L", "E", "V"], 
                         horizontal=True, 
-                        label=f"{local} vs {visita}",
-                        index=0 # ESTA LÍNEA ES LA QUE CAUSA EL ERROR
+                        label=f"{local} vs {visita}",                       
                     )
                 with col_res:
                     st.caption(f"Resultado: {local} (L), Empate (E), {visita} (V)")
