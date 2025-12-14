@@ -17,7 +17,7 @@ st.set_page_config(page_title="Prode Mundial 2026", layout="wide", page_icon="�
 st.markdown("""
     <style>
     .stApp { background-color: #000000; color: #ffffff; }
-    p, label, .stMarkdown, .stCaption { color: #ffffff !important; font-family: 'Helvetica Neue', sans-serif; }
+    p, label, .stMarkdown, .stCaption, .stCheckbox { color: #ffffff !important; font-family: 'Helvetica Neue', sans-serif; }
     h1, h2, h3 {
         font-family: 'Arial Black', sans-serif;
         background: -webkit-linear-gradient(45deg, #CF00FF, #00FF87);
@@ -25,6 +25,14 @@ st.markdown("""
         -webkit-text-fill-color: transparent;
         text-transform: uppercase;
         margin-bottom: 0px;
+    }
+    /* Estilo para el recuadro del reglamento */
+    .reglamento-box {
+        background-color: #1a1a1a;
+        border: 1px solid #00FF87;
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 20px;
     }
     div[role="radiogroup"] { justify-content: center; }
     div[role="radiogroup"] label {
@@ -102,31 +110,22 @@ def enviar_correo_confirmacion(datos):
     destinatario = datos["Email"]
     asunto = f"🏆 Ticket Oficial Mundial 2026 - {datos['Participante']}"
     
-    # 1. Armamos el HTML de los Partidos de Grupo
     html_partidos = ""
     for nombre_grupo, equipos in GRUPOS.items():
         codigo = nombre_grupo.split(" ")[1]
-        
-        # Recuperar posiciones del grupo
         p1 = datos.get(f"{nombre_grupo}_1", "-")
         p2 = datos.get(f"{nombre_grupo}_2", "-")
         p3 = datos.get(f"{nombre_grupo}_3", "-")
 
         html_partidos += f"<div style='margin-bottom: 10px; border-bottom: 1px solid #ccc; padding-bottom:5px;'><b>{nombre_grupo}:</b><br>"
-        # Partidos
         for i, (idx_L, idx_V) in enumerate(FIXTURE_INDICES):
             local, visita = equipos[idx_L], equipos[idx_V]
             key = f"P_G{codigo}_{i+1}"
             eleccion = datos.get(key, "-")
             res_txt = "EMPATE" if eleccion == "E" else (local if eleccion == "L" else visita)
             html_partidos += f"<span style='font-size: 12px;'>• {local} vs {visita} 👉 <b>{res_txt}</b></span><br>"
-        
-        # Posiciones
-        html_partidos += f"<br><span style='font-size: 12px; color: #444;'><i>Clasificados: 1. {p1} | 2. {p2} | 3. {p3}</i></span>"
-        html_partidos += "</div>"
+        html_partidos += f"<br><span style='font-size: 12px; color: #444;'><i>Clasificados: 1. {p1} | 2. {p2} | 3. {p3}</i></span></div>"
 
-    # 2. Armamos el HTML de los Playoffs (LO NUEVO)
-    # Convertimos las listas en texto HTML bonito con saltos de línea
     lista_octavos = "".join([f"<div style='margin-left:10px;'>- {eq}</div>" for eq in datos['Octavos']])
     lista_cuartos = "".join([f"<div style='margin-left:10px;'>- {eq}</div>" for eq in datos['Cuartos']])
     lista_semis = "".join([f"<div style='margin-left:10px;'><b>- {eq}</b></div>" for eq in datos['Semis']])
@@ -135,42 +134,27 @@ def enviar_correo_confirmacion(datos):
     <div style="font-family: sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; padding: 20px; background-color: #f9f9f9;">
         <div style="text-align: center; background-color: #000; padding: 20px; color: white;">
             <h1 style="color: #00FF87; margin:0;">COPA MUNDIAL 2026</h1>
-            <p>TICKET OFICIAL DE PRONÓSTICO</p>
+            <p>TICKET OFICIAL</p>
         </div>
         <div style="padding: 20px;">
             <h3>Hola, {datos['Participante']}</h3>
             <p>Tu participación ha sido registrada correctamente.</p>
-            
             <h3 style="color: #CF00FF;">🏆 TU PODIO FINAL</h3>
             <div style="background-color: #eee; padding: 15px; border-radius: 8px; text-align: center; font-size: 18px;">
                 🥇 <b>1º: {datos['Campeon']}</b><br>
                 🥈 2º: {datos['Subcampeon']}<br>
                 🥉 3º: {datos['Tercero']}
             </div>
-
             <h3 style="color: #009688;">⚔️ FASES FINALES</h3>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                <div style="background: #e0f2f1; padding: 10px; border-radius: 5px;">
-                    <b>SEMIFINALISTAS (4)</b><br>
-                    {lista_semis}
-                </div>
-                <div style="background: #e0f2f1; padding: 10px; border-radius: 5px;">
-                    <b>CUARTOS DE FINAL (8)</b><br>
-                    {lista_cuartos}
-                </div>
+                <div style="background: #e0f2f1; padding: 10px; border-radius: 5px;"><b>SEMIFINALISTAS (4)</b><br>{lista_semis}</div>
+                <div style="background: #e0f2f1; padding: 10px; border-radius: 5px;"><b>CUARTOS DE FINAL (8)</b><br>{lista_cuartos}</div>
             </div>
             <div style="background: #f1f8e9; padding: 10px; border-radius: 5px; margin-top: 10px;">
-                <b>OCTAVOS DE FINAL (16)</b><br>
-                <div style="display: grid; grid-template-columns: 1fr 1fr;">
-                    {lista_octavos}
-                </div>
+                <b>OCTAVOS DE FINAL (16)</b><br>{lista_octavos}
             </div>
-
             <h3 style="color: #000;">⚽ FASE DE GRUPOS</h3>
             {html_partidos}
-        </div>
-        <div style="text-align: center; font-size: 12px; color: #888; margin-top: 20px;">
-            Guardado el: {datos['Fecha']}
         </div>
     </div>
     """
@@ -180,8 +164,6 @@ def enviar_correo_confirmacion(datos):
         msg['To'] = destinatario
         msg['Subject'] = asunto
         msg.attach(MIMEText(cuerpo, 'html'))
-        
-        # Conexión al servidor Gmail
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(email_origen, password_app)
@@ -189,17 +171,14 @@ def enviar_correo_confirmacion(datos):
         server.quit()
         return True
     except Exception as e:
-        # AQUI MOSTRAMOS EL ERROR EN PANTALLA
         st.error(f"❌ Error enviando email: {e}")
         return False
 
 def guardar_en_google_sheets(datos):
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
-        # Lectura del JSON completo con tolerancia a caracteres especiales
         contenido_json_texto = st.secrets["google_json"]["contenido_archivo"]
         creds_dict = json.loads(contenido_json_texto, strict=False)
-
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
         sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
@@ -225,9 +204,36 @@ def guardar_en_google_sheets(datos):
         return False
 
 # ==========================================
-# 4. INTERFAZ
+# 4. REGLAMENTO (NUEVA SECCIÓN BLOQUEANTE)
 # ==========================================
 st.markdown("---")
+st.subheader("📜 REGLAMENTO Y CONDICIONES")
+
+# Aquí defines las reglas. Puedes editarlas a tu gusto.
+reglamento_texto = """
+1. **Inscripción:** La participación es válida únicamente tras completar este formulario y el pago de la inscripción.
+2. **Puntuación:**
+   - Acierto exacto de resultado (Gana/Empata/Pierde): **3 Puntos**.
+   - Acierto de clasificados a Octavos: **5 Puntos por equipo**.
+   - Acierto de Campeón: **20 Puntos**.
+3. **Cierre:** Se aceptarán respuestas hasta 1 hora antes del partido inaugural.
+4. **Premios:** El 1er puesto se lleva el 70% del pozo, el 2do el 20% y el 3ero el 10%.
+5. **Desempate:** En caso de empate en puntos, gana quien haya acertado al Campeón.
+"""
+
+st.info(reglamento_texto)
+
+acepta_terminos = st.checkbox("✅ He leído, comprendo y ACEPTO el reglamento del juego.")
+
+if not acepta_terminos:
+    st.warning("⚠️ Debes aceptar el reglamento para desbloquear el formulario de inscripción.")
+    st.stop()  # <--- ESTO DETIENE LA EJECUCIÓN AQUÍ SI NO SE ACEPTA
+
+# ==========================================
+# 5. DATOS PERSONALES (Solo se ve si aceptó)
+# ==========================================
+st.markdown("---")
+st.subheader("👤 DATOS DEL PARTICIPANTE")
 c1, c2 = st.columns(2)
 nombre = c1.text_input("Nombre y Apellido")
 dni = c2.text_input("DNI / Documento")
@@ -235,6 +241,9 @@ email = c1.text_input("Correo Electrónico")
 direccion = c2.text_input("Localidad / Dirección")
 edad = c1.number_input("Edad", 0, 100, step=1)
 
+# ==========================================
+# 6. JUEGO: FASE DE GRUPOS
+# ==========================================
 st.markdown("---")
 st.header("1. FASE DE GRUPOS")
 seleccion_grupos = {}
@@ -262,6 +271,9 @@ for nombre_grupo, equipos in GRUPOS.items():
             seleccion_grupos[nombre_grupo] = [p1, p2, p3]
     idx_col += 1
 
+# ==========================================
+# 7. JUEGO: FASES FINALES
+# ==========================================
 st.divider()
 st.header("2. FASES FINALES")
 octavos = st.multiselect("Octavos (16)", TODOS_LOS_EQUIPOS, max_selections=16)
@@ -276,6 +288,9 @@ campeon = c1.selectbox("🏆 CAMPEÓN", ["-"]+opc_final)
 subcampeon = c2.selectbox("🥈 SUBCAMPEÓN", ["-"]+opc_final)
 tercero = c3.selectbox("🥉 3ER PUESTO", ["-"]+opc_final)
 
+# ==========================================
+# 8. BOTÓN DE ENVÍO
+# ==========================================
 st.markdown("---")
 if st.button("ENVIAR PRONÓSTICO 🚀", type="primary"):
     errores = []
@@ -298,15 +313,10 @@ if st.button("ENVIAR PRONÓSTICO 🚀", type="primary"):
         }
         
         with st.spinner("Procesando..."):
-            # 1. Intentar Guardar en Google Sheets
             guardo_ok = guardar_en_google_sheets(datos_finales)
-            
             if guardo_ok:
                 st.success("✅ ¡Datos guardados correctamente en la Base de Datos!")
-                
-                # 2. Intentar Enviar Email (Solo si se guardó bien)
                 email_ok = enviar_correo_confirmacion(datos_finales)
-                
                 if email_ok:
                     st.success(f"📧 ¡Correo de confirmación enviado a {email}!")
                     st.balloons()
