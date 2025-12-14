@@ -26,14 +26,6 @@ st.markdown("""
         text-transform: uppercase;
         margin-bottom: 0px;
     }
-    /* Estilo para el recuadro del reglamento */
-    .reglamento-box {
-        background-color: #1a1a1a;
-        border: 1px solid #00FF87;
-        padding: 20px;
-        border-radius: 10px;
-        margin-bottom: 20px;
-    }
     div[role="radiogroup"] { justify-content: center; }
     div[role="radiogroup"] label {
         background-color: #1a1a1a; border: 1px solid #444;
@@ -53,6 +45,8 @@ st.markdown("""
         font-size: 18px; text-transform: uppercase; width: 100%; border-radius: 8px; margin-top: 20px;
     }
     .stTextInput input, .stNumberInput input { background-color: #222; color: white; border: 1px solid #555; border-radius: 5px; }
+    /* Mensajes de error/warning personalizados */
+    .stAlert { background-color: #222; color: white; border: 1px solid #555; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -209,7 +203,6 @@ def guardar_en_google_sheets(datos):
 st.markdown("---")
 st.subheader("📜 REGLAMENTO Y CONDICIONES")
 
-# Aquí defines las reglas. Puedes editarlas a tu gusto.
 reglamento_texto = """
 1. **Inscripción:** La participación es válida únicamente tras completar este formulario y el pago de la inscripción.
 2. **Puntuación:**
@@ -222,15 +215,14 @@ reglamento_texto = """
 """
 
 st.info(reglamento_texto)
-
 acepta_terminos = st.checkbox("✅ He leído, comprendo y ACEPTO el reglamento del juego.")
 
 if not acepta_terminos:
     st.warning("⚠️ Debes aceptar el reglamento para desbloquear el formulario de inscripción.")
-    st.stop()  # <--- ESTO DETIENE LA EJECUCIÓN AQUÍ SI NO SE ACEPTA
+    st.stop()
 
 # ==========================================
-# 5. DATOS PERSONALES (Solo se ve si aceptó)
+# 5. DATOS PERSONALES
 # ==========================================
 st.markdown("---")
 st.subheader("👤 DATOS DEL PARTICIPANTE")
@@ -272,11 +264,30 @@ for nombre_grupo, equipos in GRUPOS.items():
     idx_col += 1
 
 # ==========================================
-# 7. JUEGO: FASES FINALES
+# 7. JUEGO: FASES FINALES (MEJORADO)
 # ==========================================
 st.divider()
 st.header("2. FASES FINALES")
-octavos = st.multiselect("Octavos (16)", TODOS_LOS_EQUIPOS, max_selections=16)
+
+# --- LÓGICA INTELIGENTE AQUÍ ---
+# 1. Recopilamos todos los equipos que el usuario puso como 1, 2 o 3 en los grupos
+equipos_clasificados = []
+for lista_equipos in seleccion_grupos.values():
+    for equipo in lista_equipos:
+        if equipo != "-": # Ignoramos los guiones
+            equipos_clasificados.append(equipo)
+
+# 2. Ordenamos alfabéticamente y quitamos duplicados
+equipos_clasificados = sorted(list(set(equipos_clasificados)))
+
+# 3. Mensaje si la lista está vacía o incompleta
+if len(equipos_clasificados) < 32: # Deberían ser más, pero avisamos si hay pocos
+    st.info("ℹ️ Completa las posiciones (1º, 2º y 3º) de todos los grupos arriba para ver a tus equipos aquí.")
+
+# 4. Usamos la lista filtrada en el multiselect
+octavos = st.multiselect(f"Octavos de Final (Elige 16 de tus {len(equipos_clasificados)} clasificados)", equipos_clasificados, max_selections=16)
+
+# El resto sigue dependiendo de lo que se elija en Octavos
 cuartos = st.multiselect("Cuartos (8)", octavos if len(octavos)==16 else [], max_selections=8)
 semis = st.multiselect("Semis (4)", cuartos if len(cuartos)==8 else [], max_selections=4)
 
