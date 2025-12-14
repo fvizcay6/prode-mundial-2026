@@ -80,61 +80,70 @@ def calcular_puntaje_participante(datos_usuario, reales):
 
     puntos += pts_grupos
     desglose['Grupos'] = pts_grupos
-
-    # --- 3. FASES FINALES (Reglas 1-d a 1-i) ---
-    pts_playoff = 0
     
-    # Octavos (Regla D: 15 pts)
+    # --- 3. FASES FINALES (Desglose Detallado) ---
+    
+    # Inicializar contadores detallados
+    pts_octavos = 0
+    pts_cuartos = 0
+    pts_semis_base = 0 # Pts por Semifinal (Regla 1-f)
+    pts_tercer_puesto = 0 # Incluye 30 Pts por equipo + 35 Pts por ganador (Regla 1-g)
+    pts_final_campeon = 0 # Incluye 40 Pts por finalistas + 50 Pts por Campeón (Regla 1-h/i)
+    
+    # D: Octavos (15 pts)
     u_octavos = datos_usuario.get("Octavos", "").split(", ")
     for eq in u_octavos:
-        if eq in reales["OCTAVOS"]: pts_playoff += 15
+        if eq in reales["OCTAVOS"]: pts_octavos += 15
         
-    # Cuartos (Regla E: 20 pts)
+    # E: Cuartos (20 pts)
     u_cuartos = datos_usuario.get("Cuartos", "").split(", ")
     for eq in u_cuartos:
-        if eq in reales["CUARTOS"]: pts_playoff += 20
+        if eq in reales["CUARTOS"]: pts_cuartos += 20
 
-    # Semis (Regla F: 25 pts)
+    # F: Semis (25 pts) + G: 3er Puesto (30 pts por jugar)
     u_semis = datos_usuario.get("Semis", "").split(", ")
     for eq in u_semis:
-        if eq in reales["SEMIS"]: pts_playoff += 25
-        
-        # *** AJUSTE DE LA REGLA 1-G (30 Pts por jugar el 3er puesto) ***
-        # Si el usuario predijo a este equipo en Semis, y el equipo Real
-        # es Semifinalista, PERO NO es Campeón ni Subcampeón,
-        # significa que jugó el partido por el 3er puesto.
-        if eq in reales["SEMIS"]:
-            if eq != reales["CAMPEON"] and eq != reales["SUBCAMPEON"]:
-                # El equipo predicho por el usuario SÍ jugó el partido por el 3er puesto.
-                pts_playoff += 30 # Suma 30 Pts por equipo acertado en el partido 3er puesto
-
+        if eq in reales["SEMIS"]: 
+            pts_semis_base += 25 # Regla 1-f: 25 Pts por semifinalista
+            
+            # Regla 1-g (30 Pts por jugar el 3er puesto):
+            # Si el equipo fue semifinalista PERO NO fue Campeón ni Subcampeón, jugó el 3er puesto.
+            if eq != reales["CAMPEON"] and eq != reales["SUBCAMPEON"] and reales["CAMPEON"] != "-":
+                pts_tercer_puesto += 30 
+                
     # Regla G: Acertar el 3er puesto (35 pts extra)
     u_tercero = datos_usuario.get("Tercero")
     if u_tercero == reales["TERCERO_GANADOR"]: 
-        pts_playoff += 35 # 35 Pts por acertar al ganador exacto del 3er puesto
+        pts_tercer_puesto += 35 
     
-    # Regla H: Finalistas (40 pts) y Regla I: Campeón (50 pts)
+    # H: Finalistas (40 pts) y I: Campeón (50 pts)
     u_campeon = datos_usuario.get("Campeon")
     u_sub = datos_usuario.get("Subcampeon")
     
     # Regla H: Finalistas
-    if u_campeon in reales["FINALISTAS"]: pts_playoff += 40
-    if u_sub in reales["FINALISTAS"]: pts_playoff += 40
+    if u_campeon in reales["FINALISTAS"]: pts_final_campeon += 40
+    if u_sub in reales["FINALISTAS"]: pts_final_campeon += 40
     
     # Regla I: Campeón (Bonus)
-    if u_campeon == reales["CAMPEON"]: pts_playoff += 50
+    if u_campeon == reales["CAMPEON"]: pts_final_campeon += 50
     
-    puntos += pts_playoff
-    desglose['Playoffs'] = pts_playoff
+    # Sumar todos los puntos
+    pts_playoff_total = pts_octavos + pts_cuartos + pts_semis_base + pts_tercer_puesto + pts_final_campeon
+    puntos += pts_playoff_total
     
+    # Rellenar el desglose detallado
+    desglose['Octavos'] = pts_octavos
+    desglose['Cuartos'] = pts_cuartos
+    desglose['Semifinales'] = pts_semis_base
+    desglose['Tercer Puesto'] = pts_tercer_puesto
+    desglose['Final/Campeon'] = pts_final_campeon
     desglose['TOTAL'] = puntos
+    
     return desglose
 
 # ==========================================
 # 3. INTERFAZ DE CARGA DE RESULTADOS REALES
 # ==========================================
-# ... (El resto de la interfaz de carga de resultados (puntos 3 y 4) es idéntica a la versión anterior y no necesita cambios) ...
-# Dado que la interfaz de carga de resultados (punto 3) y la ejecución del cálculo (punto 4) no cambiaron en su estructura, solo copiamos la parte de la interfaz.
 
 st.subheader("1. Carga de Fases de Grupos (Resultados Reales)")
 st.caption("Utilice estos controles para ingresar los resultados reales del Mundial. El cálculo se hará basado en su entrada.")
@@ -147,10 +156,10 @@ grupos_reales = {}
 octavos_reales = []
 cuartos_reales = []
 semis_reales = []
-tercero_equipos_reales = []
 tercero_ganador_real = "-"
 finalistas_reales = []
 campeon_real = "-"
+subcampeon_real = "-" # Necesitamos el subcampeón para la regla del 3er puesto
 
 # --- CARGA GRUPOS ---
 for nombre_grupo, equipos in GRUPOS.items():
@@ -235,8 +244,7 @@ with col_sub:
 with col_ter:
     tercero_ganador_real = st.selectbox("🥉 3ER PUESTO REAL (Regla 1-g: 35 Pts)", ["-"]+opc_podio, key="Real_3ro_Ganador")
     
-    # Lógica para determinar quiénes jugaron por el 3er puesto (los 4tos y 3ros)
-    # Son los dos equipos de Semis que NO llegaron a la Final.
+    # Usamos esta lista solo para mostrar el desglose, no afecta el cálculo
     jugaron_tercero = [eq for eq in semis_reales if eq not in [campeon_real, subcampeon_real] and eq != "-"]
     tercero_equipos_reales = jugaron_tercero
             
@@ -252,7 +260,7 @@ RESULTADOS_REALES_DINAMICO = {
     "TERCERO_GANADOR": tercero_ganador_real,
     "FINALISTAS": [campeon_real, subcampeon_real] if campeon_real != "-" and subcampeon_real != "-" else [],
     "CAMPEON": campeon_real,
-    "SUBCAMPEON": subcampeon_real # Agregamos Subcampeon al dict de reales para el cálculo de la Regla 1-g
+    "SUBCAMPEON": subcampeon_real
 }
 
 # ==========================================
@@ -276,7 +284,6 @@ st.header("TABLA DE POSICIONES")
 
 if st.button("🔄 CALCULAR PUNTAJES Y ACTUALIZAR TABLA"):
     
-    # Validar que al menos haya resultados cargados para evitar cálculos vacíos
     partidos_cargados = [v for k, v in RESULTADOS_REALES_DINAMICO["PARTIDOS"].items() if v != "-"]
     grupos_cargados = [v for g in RESULTADOS_REALES_DINAMICO["GRUPOS"].values() for k, v in g.items() if (k=="1" or k=="2" or k=="3") and v != "-"]
     
@@ -290,24 +297,34 @@ if st.button("🔄 CALCULAR PUNTAJES Y ACTUALIZAR TABLA"):
             tabla = []
             
             for usuario in datos_usuarios:
+                # El cálculo detallado se hace aquí:
                 puntajes = calcular_puntaje_participante(usuario, RESULTADOS_REALES_DINAMICO)
+                
                 fila = {
                     "Participante": usuario["Participante"],
                     "TOTAL": puntajes["TOTAL"],
                     "Partidos": puntajes["Partidos"],
                     "Grupos": puntajes["Grupos"],
-                    "Playoffs": puntajes["Playoffs"]
+                    "Octavos": puntajes["Octavos"],
+                    "Cuartos": puntajes["Cuartos"],
+                    "Semifinales": puntajes["Semifinales"],
+                    "3er Puesto": puntajes["Tercer Puesto"],
+                    "Final/Campeon": puntajes["Final/Campeon"],
                 }
                 tabla.append(fila)
             
             # Crear DataFrame y Ordenar aplicando Reglas de Desempate (Regla 3-j)
             df = pd.DataFrame(tabla)
             
-            # Orden: 1. TOTAL, 2. Pts Grupos, 3. Pts Playoffs
+            # Criterios de desempate
+            # Creamos una columna temporal de Pts Playoffs para el desempate 2º (Regla 3-j)
+            df['Playoffs_Desempate'] = df['Octavos'] + df['Cuartos'] + df['Semifinales'] + df['3er Puesto'] + df['Final/Campeon']
+            
+            # Orden: 1. TOTAL, 2. Pts Grupos, 3. Pts Playoffs_Desempate
             df = df.sort_values(
-                by=["TOTAL", "Grupos", "Playoffs"], 
+                by=["TOTAL", "Grupos", "Playoffs_Desempate"], 
                 ascending=[False, False, False]
-            ).reset_index(drop=True)
+            ).drop(columns=['Playoffs_Desempate']).reset_index(drop=True)
             
             df.index += 1
             
@@ -318,7 +335,14 @@ if st.button("🔄 CALCULAR PUNTAJES Y ACTUALIZAR TABLA"):
                 df, 
                 use_container_width=True,
                 column_config={
-                    "TOTAL": st.column_config.NumberColumn("🏆 PUNTOS TOTALES", format="%d"),
+                    "TOTAL": st.column_config.NumberColumn("🏆 TOTAL", format="%d"),
+                    "Partidos": st.column_config.NumberColumn("1 Pts x Partido", format="%d"),
+                    "Grupos": st.column_config.NumberColumn("2 Grupos", format="%d"),
+                    "Octavos": st.column_config.NumberColumn("3 Octavos", format="%d"),
+                    "Cuartos": st.column_config.NumberColumn("4 Cuartos", format="%d"),
+                    "Semifinales": st.column_config.NumberColumn("5 Semifinales", format="%d"),
+                    "3er Puesto": st.column_config.NumberColumn("6 3er Puesto", format="%d"),
+                    "Final/Campeon": st.column_config.NumberColumn("7 Final/Camp.", format="%d"),
                 }
             )
             
