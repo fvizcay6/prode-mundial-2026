@@ -64,7 +64,7 @@ with c_logo:
     if os.path.exists("logo.jpg"): st.image("logo.jpg", use_container_width=True)
     elif os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
 with c_tit:
-    st.title("FIFA WORLD CUP ESTADOS UNIDOS-MEXICO-CANADA 2026")
+    st.title("FIFA WORLD CUP USA-MEXICO-CANADA 2026")
     st.markdown("### OFFICIAL PREDICTION GAME")
 
 # ==========================================
