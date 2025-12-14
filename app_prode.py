@@ -7,7 +7,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
-import json  # Librería esencial para leer el JSON completo
+import json
 
 # ==========================================
 # 1. CONFIGURACIÓN VISUAL
@@ -102,31 +102,75 @@ def enviar_correo_confirmacion(datos):
     destinatario = datos["Email"]
     asunto = f"🏆 Ticket Oficial Mundial 2026 - {datos['Participante']}"
     
+    # 1. Armamos el HTML de los Partidos de Grupo
     html_partidos = ""
     for nombre_grupo, equipos in GRUPOS.items():
         codigo = nombre_grupo.split(" ")[1]
+        
+        # Recuperar posiciones del grupo
+        p1 = datos.get(f"{nombre_grupo}_1", "-")
+        p2 = datos.get(f"{nombre_grupo}_2", "-")
+        p3 = datos.get(f"{nombre_grupo}_3", "-")
+
         html_partidos += f"<div style='margin-bottom: 10px; border-bottom: 1px solid #ccc; padding-bottom:5px;'><b>{nombre_grupo}:</b><br>"
+        # Partidos
         for i, (idx_L, idx_V) in enumerate(FIXTURE_INDICES):
             local, visita = equipos[idx_L], equipos[idx_V]
             key = f"P_G{codigo}_{i+1}"
             eleccion = datos.get(key, "-")
             res_txt = "EMPATE" if eleccion == "E" else (local if eleccion == "L" else visita)
             html_partidos += f"<span style='font-size: 12px;'>• {local} vs {visita} 👉 <b>{res_txt}</b></span><br>"
+        
+        # Posiciones
+        html_partidos += f"<br><span style='font-size: 12px; color: #444;'><i>Clasificados: 1. {p1} | 2. {p2} | 3. {p3}</i></span>"
         html_partidos += "</div>"
+
+    # 2. Armamos el HTML de los Playoffs (LO NUEVO)
+    # Convertimos las listas en texto HTML bonito con saltos de línea
+    lista_octavos = "".join([f"<div style='margin-left:10px;'>- {eq}</div>" for eq in datos['Octavos']])
+    lista_cuartos = "".join([f"<div style='margin-left:10px;'>- {eq}</div>" for eq in datos['Cuartos']])
+    lista_semis = "".join([f"<div style='margin-left:10px;'><b>- {eq}</b></div>" for eq in datos['Semis']])
 
     cuerpo = f"""
     <div style="font-family: sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; padding: 20px; background-color: #f9f9f9;">
         <div style="text-align: center; background-color: #000; padding: 20px; color: white;">
             <h1 style="color: #00FF87; margin:0;">COPA MUNDIAL 2026</h1>
-            <p>TICKET OFICIAL</p>
+            <p>TICKET OFICIAL DE PRONÓSTICO</p>
         </div>
         <div style="padding: 20px;">
             <h3>Hola, {datos['Participante']}</h3>
-            <p>Tu participación ha sido registrada.</p>
-            <h3 style="color: #CF00FF;">🏆 TU PODIO</h3>
-            <p>1. {datos['Campeon']} | 2. {datos['Subcampeon']} | 3. {datos['Tercero']}</p>
-            <h3 style="color: #000;">⚽ DETALLE DE GRUPOS</h3>
+            <p>Tu participación ha sido registrada correctamente.</p>
+            
+            <h3 style="color: #CF00FF;">🏆 TU PODIO FINAL</h3>
+            <div style="background-color: #eee; padding: 15px; border-radius: 8px; text-align: center; font-size: 18px;">
+                🥇 <b>1º: {datos['Campeon']}</b><br>
+                🥈 2º: {datos['Subcampeon']}<br>
+                🥉 3º: {datos['Tercero']}
+            </div>
+
+            <h3 style="color: #009688;">⚔️ FASES FINALES</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div style="background: #e0f2f1; padding: 10px; border-radius: 5px;">
+                    <b>SEMIFINALISTAS (4)</b><br>
+                    {lista_semis}
+                </div>
+                <div style="background: #e0f2f1; padding: 10px; border-radius: 5px;">
+                    <b>CUARTOS DE FINAL (8)</b><br>
+                    {lista_cuartos}
+                </div>
+            </div>
+            <div style="background: #f1f8e9; padding: 10px; border-radius: 5px; margin-top: 10px;">
+                <b>OCTAVOS DE FINAL (16)</b><br>
+                <div style="display: grid; grid-template-columns: 1fr 1fr;">
+                    {lista_octavos}
+                </div>
+            </div>
+
+            <h3 style="color: #000;">⚽ FASE DE GRUPOS</h3>
             {html_partidos}
+        </div>
+        <div style="text-align: center; font-size: 12px; color: #888; margin-top: 20px;">
+            Guardado el: {datos['Fecha']}
         </div>
     </div>
     """
