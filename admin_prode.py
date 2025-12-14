@@ -38,8 +38,6 @@ st.header("👮‍♂️ PANEL DE CONTROL Y PUNTUACIÓN")
 def calcular_puntaje_participante(datos_usuario, reales):
     puntos = 0
     desglose = {}
-    
-    # Lista de las 3 predicciones del usuario que serán chequeadas
     posiciones = [1, 2, 3] 
 
     # --- 1. RONDA PARTIDO X PARTIDO (Regla 2-j: 1 punto) ---
@@ -56,10 +54,8 @@ def calcular_puntaje_participante(datos_usuario, reales):
     pts_grupos = 0
     
     for grupo, data_real in reales["GRUPOS"].items():
-        # Verificamos si los resultados reales del Top 3 de este grupo están completos
         if data_real["1"] != "-" and data_real["2"] != "-" and data_real["3"] != "-":
             
-            # 1. Estructura de "La Verdad" (Resultados Reales)
             real_top3 = [data_real["1"], data_real["2"], data_real["3"]]
             puntos_reales = {
                 data_real["1"]: data_real["pts_1"],
@@ -67,29 +63,20 @@ def calcular_puntaje_participante(datos_usuario, reales):
                 data_real["3"]: data_real["pts_3"],
             }
             
-            # 2. Iteramos por cada predicción del usuario (1º, 2º, 3º)
             for i in posiciones:
-                # El campo en la hoja de cálculo del usuario
                 campo_usuario = f"{grupo}_{i}"
                 u_equipo = datos_usuario.get(campo_usuario)
-                
-                # El equipo real en esa posición
                 r_equipo_en_posicion = data_real[str(i)]
                 
-                # --- Regla 1-a & 1-c ---
-                # Verificar si el equipo predicho por el usuario (U_equipo) clasificó realmente (está en el Top 3 Real)
+                # Regla 1-a & 1-c: Acertar equipo clasificado + puntos reales obtenidos
                 if u_equipo in real_top3:
                     pts_grupos += 10 # Regla 1-a: 10 Pts por equipo clasificado
-                    
-                    # Regla 1-c: Sumar los puntos que ese equipo *realmente* obtuvo.
-                    # Buscamos los puntos en el diccionario de puntos_reales
                     if u_equipo in puntos_reales:
-                        pts_grupos += puntos_reales[u_equipo]
+                        pts_grupos += puntos_reales[u_equipo] # Regla 1-c: Puntos que el equipo real hizo
                 
-                # --- Regla 1-b ---
-                # Verificar si el usuario acertó la posición exacta (U_i = R_i)
+                # Regla 1-b: Acertar posición exacta (5 pts extra)
                 if u_equipo == r_equipo_en_posicion:
-                    pts_grupos += 5 # Regla 1-b: 5 Pts por acierto de posición
+                    pts_grupos += 5
 
     puntos += pts_grupos
     desglose['Grupos'] = pts_grupos
@@ -97,25 +84,34 @@ def calcular_puntaje_participante(datos_usuario, reales):
     # --- 3. FASES FINALES (Reglas 1-d a 1-i) ---
     pts_playoff = 0
     
-    # Regla D: Octavos (15 pts)
+    # Octavos (Regla D: 15 pts)
     u_octavos = datos_usuario.get("Octavos", "").split(", ")
     for eq in u_octavos:
         if eq in reales["OCTAVOS"]: pts_playoff += 15
         
-    # Regla E: Cuartos (20 pts)
+    # Cuartos (Regla E: 20 pts)
     u_cuartos = datos_usuario.get("Cuartos", "").split(", ")
     for eq in u_cuartos:
         if eq in reales["CUARTOS"]: pts_playoff += 20
 
-    # Regla F: Semis (25 pts)
+    # Semis (Regla F: 25 pts)
     u_semis = datos_usuario.get("Semis", "").split(", ")
     for eq in u_semis:
         if eq in reales["SEMIS"]: pts_playoff += 25
+        
+        # *** AJUSTE DE LA REGLA 1-G (30 Pts por jugar el 3er puesto) ***
+        # Si el usuario predijo a este equipo en Semis, y el equipo Real
+        # es Semifinalista, PERO NO es Campeón ni Subcampeón,
+        # significa que jugó el partido por el 3er puesto.
+        if eq in reales["SEMIS"]:
+            if eq != reales["CAMPEON"] and eq != reales["SUBCAMPEON"]:
+                # El equipo predicho por el usuario SÍ jugó el partido por el 3er puesto.
+                pts_playoff += 30 # Suma 30 Pts por equipo acertado en el partido 3er puesto
 
-    # Regla G: Tercer Puesto (30 pts por equipo + 35 pts por acierto)
+    # Regla G: Acertar el 3er puesto (35 pts extra)
     u_tercero = datos_usuario.get("Tercero")
-    if u_tercero in reales["TERCERO_EQUIPOS"]: pts_playoff += 30 # 30 Pts por equipo que jugó el 3er puesto
-    if u_tercero == reales["TERCERO_GANADOR"]: pts_playoff += 35 # 35 Pts por acertar al 3er puesto
+    if u_tercero == reales["TERCERO_GANADOR"]: 
+        pts_playoff += 35 # 35 Pts por acertar al ganador exacto del 3er puesto
     
     # Regla H: Finalistas (40 pts) y Regla I: Campeón (50 pts)
     u_campeon = datos_usuario.get("Campeon")
@@ -137,6 +133,8 @@ def calcular_puntaje_participante(datos_usuario, reales):
 # ==========================================
 # 3. INTERFAZ DE CARGA DE RESULTADOS REALES
 # ==========================================
+# ... (El resto de la interfaz de carga de resultados (puntos 3 y 4) es idéntica a la versión anterior y no necesita cambios) ...
+# Dado que la interfaz de carga de resultados (punto 3) y la ejecución del cálculo (punto 4) no cambiaron en su estructura, solo copiamos la parte de la interfaz.
 
 st.subheader("1. Carga de Fases de Grupos (Resultados Reales)")
 st.caption("Utilice estos controles para ingresar los resultados reales del Mundial. El cálculo se hará basado en su entrada.")
@@ -253,7 +251,8 @@ RESULTADOS_REALES_DINAMICO = {
     "TERCERO_EQUIPOS": tercero_equipos_reales, 
     "TERCERO_GANADOR": tercero_ganador_real,
     "FINALISTAS": [campeon_real, subcampeon_real] if campeon_real != "-" and subcampeon_real != "-" else [],
-    "CAMPEON": campeon_real
+    "CAMPEON": campeon_real,
+    "SUBCAMPEON": subcampeon_real # Agregamos Subcampeon al dict de reales para el cálculo de la Regla 1-g
 }
 
 # ==========================================
