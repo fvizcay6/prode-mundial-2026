@@ -158,7 +158,7 @@ for nombre_grupo, equipos in GRUPOS.items():
                         ["-", "L", "E", "V"], 
                         horizontal=True, 
                         label=f"{local} vs {visita}",
-                        index=0 # Sin seleccionar por defecto
+                        index=0 # ESTA LÍNEA ES LA QUE CAUSA EL ERROR
                     )
                 with col_res:
                     st.caption(f"Resultado: {local} (L), Empate (E), {visita} (V)")
