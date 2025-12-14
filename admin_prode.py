@@ -38,11 +38,14 @@ st.header("👮‍♂️ PANEL DE CONTROL Y PUNTUACIÓN")
 def calcular_puntaje_participante(datos_usuario, reales):
     puntos = 0
     desglose = {}
+    
+    # Lista de las 3 predicciones del usuario que serán chequeadas
+    posiciones = [1, 2, 3] 
 
     # --- 1. RONDA PARTIDO X PARTIDO (Regla 2-j: 1 punto) ---
     pts_partidos = 0
     for key, resultado_real in reales["PARTIDOS"].items():
-        if resultado_real != "-": # Solo cuenta si el resultado real fue cargado
+        if resultado_real != "-":
             pronostico = datos_usuario.get(key, "-")
             if pronostico == resultado_real:
                 pts_partidos += 1
@@ -51,35 +54,42 @@ def calcular_puntaje_participante(datos_usuario, reales):
 
     # --- 2. FASE DE GRUPOS (Reglas 1-a, 1-b, 1-c) ---
     pts_grupos = 0
+    
     for grupo, data_real in reales["GRUPOS"].items():
-        if data_real["1"] != "-" and data_real["2"] != "-": # Solo calcula si el Top 2 real está cargado
+        # Verificamos si los resultados reales del Top 3 de este grupo están completos
+        if data_real["1"] != "-" and data_real["2"] != "-" and data_real["3"] != "-":
             
-            u_1 = datos_usuario.get(f"{grupo}_1")
-            u_2 = datos_usuario.get(f"{grupo}_2")
+            # 1. Estructura de "La Verdad" (Resultados Reales)
+            real_top3 = [data_real["1"], data_real["2"], data_real["3"]]
+            puntos_reales = {
+                data_real["1"]: data_real["pts_1"],
+                data_real["2"]: data_real["pts_2"],
+                data_real["3"]: data_real["pts_3"],
+            }
             
-            real_1 = data_real["1"]
-            real_2 = data_real["2"]
-            pts_reales_1 = data_real["pts_1"] 
-            pts_reales_2 = data_real["pts_2"]
-            clasificados_real = [real_1, real_2]
-            
-            # Regla A & C (1er puesto predicho)
-            if u_1 in clasificados_real:
-                pts_grupos += 10 # Regla A: Acertar equipo clasificado (10 Pts)
-                # Regla C: Sumar puntos reales
-                if u_1 == real_1: pts_grupos += pts_reales_1
-                elif u_1 == real_2: pts_grupos += pts_reales_2
-            
-            # Regla A & C (2do puesto predicho)
-            if u_2 in clasificados_real:
-                pts_grupos += 10 # Regla A: Acertar equipo clasificado (10 Pts)
-                # Regla C
-                if u_2 == real_1: pts_grupos += pts_reales_1
-                elif u_2 == real_2: pts_grupos += pts_reales_2
-
-            # Regla B: Acertar posición exacta (5 pts extra)
-            if u_1 == real_1: pts_grupos += 5
-            if u_2 == real_2: pts_grupos += 5
+            # 2. Iteramos por cada predicción del usuario (1º, 2º, 3º)
+            for i in posiciones:
+                # El campo en la hoja de cálculo del usuario
+                campo_usuario = f"{grupo}_{i}"
+                u_equipo = datos_usuario.get(campo_usuario)
+                
+                # El equipo real en esa posición
+                r_equipo_en_posicion = data_real[str(i)]
+                
+                # --- Regla 1-a & 1-c ---
+                # Verificar si el equipo predicho por el usuario (U_equipo) clasificó realmente (está en el Top 3 Real)
+                if u_equipo in real_top3:
+                    pts_grupos += 10 # Regla 1-a: 10 Pts por equipo clasificado
+                    
+                    # Regla 1-c: Sumar los puntos que ese equipo *realmente* obtuvo.
+                    # Buscamos los puntos en el diccionario de puntos_reales
+                    if u_equipo in puntos_reales:
+                        pts_grupos += puntos_reales[u_equipo]
+                
+                # --- Regla 1-b ---
+                # Verificar si el usuario acertó la posición exacta (U_i = R_i)
+                if u_equipo == r_equipo_en_posicion:
+                    pts_grupos += 5 # Regla 1-b: 5 Pts por acierto de posición
 
     puntos += pts_grupos
     desglose['Grupos'] = pts_grupos
@@ -104,8 +114,8 @@ def calcular_puntaje_participante(datos_usuario, reales):
 
     # Regla G: Tercer Puesto (30 pts por equipo + 35 pts por acierto)
     u_tercero = datos_usuario.get("Tercero")
-    if u_tercero in reales["TERCERO_EQUIPOS"]: pts_playoff += 30 # Acertó uno de los dos equipos que jugaron el 3er puesto
-    if u_tercero == reales["TERCERO_GANADOR"]: pts_playoff += 35 # Acertó el ganador exacto
+    if u_tercero in reales["TERCERO_EQUIPOS"]: pts_playoff += 30 # 30 Pts por equipo que jugó el 3er puesto
+    if u_tercero == reales["TERCERO_GANADOR"]: pts_playoff += 35 # 35 Pts por acertar al 3er puesto
     
     # Regla H: Finalistas (40 pts) y Regla I: Campeón (50 pts)
     u_campeon = datos_usuario.get("Campeon")
@@ -153,7 +163,6 @@ for nombre_grupo, equipos in GRUPOS.items():
             for i, (idx_L, idx_V) in enumerate(FIXTURE_INDICES):
                 local, visita = equipos[idx_L], equipos[idx_V]
                 
-                # Creamos la clave única
                 radio_key = f"Real_Partido_{codigo}_{i+1}"
                 
                 col_btn, col_res = st.columns([1, 4])
@@ -162,7 +171,7 @@ for nombre_grupo, equipos in GRUPOS.items():
                         label="", 
                         options=["-", "L", "E", "V"], 
                         horizontal=True, 
-                        key=radio_key, # LA CLAVE ÚNICA CORREGIDA
+                        key=radio_key,
                     )
                 with col_res:
                     st.caption(f"Resultado para **{local}** vs **{visita}**: L, E, V")
@@ -170,13 +179,20 @@ for nombre_grupo, equipos in GRUPOS.items():
                 partidos_reales[f"P_G{codigo}_{i+1}"] = res
             
             st.markdown("##### Clasificados y Puntos (Reglas 1-a, 1-b, 1-c)")
+            
+            # -- 1er Puesto --
             p1 = st.selectbox("🥇 1º REAL", ["-"]+equipos, key=f"Real_{codigo}_1", index=0)
             pts1 = st.number_input("Puntos REALES del 1º (Regla 1-c)", 0, 9, key=f"Real_{codigo}_pts1")
             
+            # -- 2do Puesto --
             p2 = st.selectbox("🥈 2º REAL", ["-"]+equipos, key=f"Real_{codigo}_2", index=0)
             pts2 = st.number_input("Puntos REALES del 2º (Regla 1-c)", 0, 9, key=f"Real_{codigo}_pts2")
             
-            grupos_reales[nombre_grupo] = {"1": p1, "2": p2, "pts_1": pts1, "pts_2": pts2}
+            # -- 3er Puesto (Nuevo) --
+            p3 = st.selectbox("🥉 3º REAL (Clasifica o no)", ["-"]+equipos, key=f"Real_{codigo}_3", index=0)
+            pts3 = st.number_input("Puntos REALES del 3º (Regla 1-c)", 0, 9, key=f"Real_{codigo}_pts3")
+            
+            grupos_reales[nombre_grupo] = {"1": p1, "2": p2, "3": p3, "pts_1": pts1, "pts_2": pts2, "pts_3": pts3}
 
     idx_col += 1
 
@@ -189,21 +205,21 @@ octavos_reales = st.multiselect(
     "🏆 EQUIPOS REALES en Octavos de Final (16 equipos)", 
     TODOS_LOS_EQUIPOS, 
     max_selections=16,
-    help="Solo los equipos que jugaron realmente los Octavos. (Regla 1-d: 15 Pts)"
+    help="Solo los 16 equipos que jugaron realmente los Octavos. (Regla 1-d: 15 Pts)"
 )
 
 cuartos_reales = st.multiselect(
     "🏆 EQUIPOS REALES en Cuartos de Final (8 equipos)", 
     octavos_reales if len(octavos_reales) == 16 else TODOS_LOS_EQUIPOS,
     max_selections=8,
-    help="Solo los equipos que jugaron realmente los Cuartos. (Regla 1-e: 20 Pts)"
+    help="Solo los 8 equipos que jugaron realmente los Cuartos. (Regla 1-e: 20 Pts)"
 )
 
 semis_reales = st.multiselect(
     "🏆 EQUIPOS REALES en Semifinales (4 equipos)", 
     cuartos_reales if len(cuartos_reales) == 8 else TODOS_LOS_EQUIPOS,
     max_selections=4,
-    help="Solo los equipos que llegaron a Semifinales. (Regla 1-f: 25 Pts)"
+    help="Solo los 4 equipos que llegaron a Semifinales. (Regla 1-f: 25 Pts)"
 )
 
 # --- CARGA PODIO ---
@@ -219,9 +235,10 @@ with col_sub:
     subcampeon_real = st.selectbox("🥈 SUBCAMPEÓN REAL (Regla 1-h)", ["-"]+opc_podio, key="Real_Sub")
 
 with col_ter:
-    tercero_ganador_real = st.selectbox("🥉 TERCER PUESTO REAL (Regla 1-g: 35 Pts)", ["-"]+opc_podio, key="Real_3ro_Ganador")
+    tercero_ganador_real = st.selectbox("🥉 3ER PUESTO REAL (Regla 1-g: 35 Pts)", ["-"]+opc_podio, key="Real_3ro_Ganador")
     
     # Lógica para determinar quiénes jugaron por el 3er puesto (los 4tos y 3ros)
+    # Son los dos equipos de Semis que NO llegaron a la Final.
     jugaron_tercero = [eq for eq in semis_reales if eq not in [campeon_real, subcampeon_real] and eq != "-"]
     tercero_equipos_reales = jugaron_tercero
             
@@ -252,7 +269,7 @@ def obtener_datos():
         sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
         return sheet.get_all_records()
     except Exception as e:
-        st.error(f"❌ ERROR: No se pudo conectar a Google Sheets. Revisa los Secrets. ({e})")
+        st.error(f"❌ ERROR: No se pudo conectar a Google Sheets. Revisa los Secrets o el nombre de la hoja. ({e})")
         return None
 
 st.markdown("---")
@@ -262,7 +279,7 @@ if st.button("🔄 CALCULAR PUNTAJES Y ACTUALIZAR TABLA"):
     
     # Validar que al menos haya resultados cargados para evitar cálculos vacíos
     partidos_cargados = [v for k, v in RESULTADOS_REALES_DINAMICO["PARTIDOS"].items() if v != "-"]
-    grupos_cargados = [v for k, v in RESULTADOS_REALES_DINAMICO["GRUPOS"].items() if v["1"] != "-"]
+    grupos_cargados = [v for g in RESULTADOS_REALES_DINAMICO["GRUPOS"].values() for k, v in g.items() if (k=="1" or k=="2" or k=="3") and v != "-"]
     
     if not partidos_cargados and not grupos_cargados and not RESULTADOS_REALES_DINAMICO["OCTAVOS"]:
          st.warning("⚠️ No ha cargado ningún resultado real. La tabla mostrará ceros.")
@@ -290,7 +307,7 @@ if st.button("🔄 CALCULAR PUNTAJES Y ACTUALIZAR TABLA"):
             # Orden: 1. TOTAL, 2. Pts Grupos, 3. Pts Playoffs
             df = df.sort_values(
                 by=["TOTAL", "Grupos", "Playoffs"], 
-                ascending=[False, False, False] # Queremos mayor a menor en todos
+                ascending=[False, False, False]
             ).reset_index(drop=True)
             
             df.index += 1
