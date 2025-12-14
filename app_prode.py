@@ -17,7 +17,7 @@ st.set_page_config(page_title="Prode Mundial 2026", layout="wide", page_icon="�
 st.markdown("""
     <style>
     .stApp { background-color: #000000; color: #ffffff; }
-    p, label, .stMarkdown, .stCaption, .stCheckbox { color: #ffffff !important; font-family: 'Helvetica Neue', sans-serif; }
+    p, label, .stMarkdown, .stCaption, .stCheckbox, li { color: #ffffff !important; font-family: 'Helvetica Neue', sans-serif; }
     h1, h2, h3 {
         font-family: 'Arial Black', sans-serif;
         background: -webkit-linear-gradient(45deg, #CF00FF, #00FF87);
@@ -46,6 +46,7 @@ st.markdown("""
     }
     .stTextInput input, .stNumberInput input { background-color: #222; color: white; border: 1px solid #555; border-radius: 5px; }
     .stAlert { background-color: #222; color: white; border: 1px solid #555; }
+    strong { color: #00FF87; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -176,9 +177,6 @@ def validar_duplicados_en_sheet(dni_input, email_input):
         client = gspread.authorize(creds)
         sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
         
-        # Obtenemos columnas completas (DNI está en col 4, Email en col 3)
-        # OJO: Depende del orden en 'guardar_en_google_sheets'
-        # [Fecha, Participante, Email, DNI, ...]
         lista_emails = sheet.col_values(3)
         lista_dnis = sheet.col_values(4)
         
@@ -225,18 +223,36 @@ def guardar_en_google_sheets(datos):
 # 4. REGLAMENTO Y DATOS
 # ==========================================
 st.markdown("---")
-st.subheader("📜 REGLAMENTO Y CONDICIONES")
+st.subheader("📜 REGLAMENTO SUPER PRODE USA-MEXICO-CANADA 2026")
+
 reglamento_texto = """
-1. **Inscripción:** La participación es válida tras completar formulario y pago.
-2. **Puntuación:** Gana/Empata/Pierde: 3pts | Clasificados Octavos: 5pts | Campeón: 20pts.
-3. **Control:** No se permiten múltiples inscripciones por DNI o Email.
-4. **Premios:** 1º (70%), 2º (20%), 3º (10%).
+**1. Sistema de puntuación:**
+* **a)** Se sumará **10 Pts.** por cada equipo que Ud. acierte en la primera fase.
+* **b)** Además se sumará **5 Pts.** si Ud. acierta la posición de los equipos clasificados en sus respectivos grupos.
+* **c)** También se sumarán los Pts. que los equipos clasificados sumen en sus grupos.
+* **d)** En **Octavos de Final**, Ud. sumará **15 Pts.** por cada equipo acertado.
+* **e)** En **Cuartos de Final**, Ud. sumará **20 Pts.** por cada equipo acertado.
+* **f)** En **Semifinales**, Ud. sumará **25 Pts.** por cada equipo acertado.
+* **g)** En el partido por el **Tercer Puesto** se sumará **30 Pts.** por equipo acertado, más **35 Pts.** si acierta al tercer puesto.
+* **h)** Se sumará **40 Pts.** por cada equipo que Ud. acierte en la **Final**.
+* **i)** Si Ud. acierta el equipo **Campeón**, sumará un bonus de **50 Pts.**
+
+**2. Ronda Partido X Partido:**
+* **j)** Se tomarán todos los partidos de la fase de grupos. Deberá seleccionar el resultado (Local, Empate o Visitante). Cada acierto sumará **1 punto** para esta ronda, como también para el total del SUPER PRODE 2026.
+
+**3. Aclaraciones del juego:**
+* **k)** En caso de empate en la puntuación final se desempatará de la siguiente forma:
+    1.  El participante que haya logrado mayor cantidad de Pts. en la fase de grupos.
+    2.  De persistir el empate, ganará el participante que logre más Pts. sumados entre octavos, cuartos, semifinales, tercer puesto y final.
+    3.  De persistir el empate, el ganador se decidirá por sorteo.
+* **l)** Solo se permitirá un prode por persona.
 """
+
 st.info(reglamento_texto)
-acepta_terminos = st.checkbox("✅ He leído, comprendo y ACEPTO el reglamento.")
+acepta_terminos = st.checkbox("✅ He leído, comprendo y ACEPTO el reglamento del juego.")
 
 if not acepta_terminos:
-    st.warning("⚠️ Debes aceptar el reglamento para continuar.")
+    st.warning("⚠️ Debes aceptar el reglamento para desbloquear el formulario de inscripción.")
     st.stop()
 
 st.markdown("---")
@@ -289,7 +305,7 @@ for lista_equipos in seleccion_grupos.values():
         if equipo != "-": equipos_clasificados.append(equipo)
 equipos_clasificados = sorted(list(set(equipos_clasificados)))
 
-if len(equipos_clasificados) < 32: st.info("ℹ️ Completa las posiciones de todos los grupos para ver a tus equipos aquí.")
+if len(equipos_clasificados) < 32: st.info("ℹ️ Completa las posiciones (1º, 2º y 3º) de todos los grupos arriba para ver a tus equipos aquí.")
 octavos = st.multiselect(f"Octavos ({len(equipos_clasificados)} clasificados)", equipos_clasificados, max_selections=16)
 cuartos = st.multiselect("Cuartos (8)", octavos if len(octavos)==16 else [], max_selections=8)
 semis = st.multiselect("Semis (4)", cuartos if len(cuartos)==8 else [], max_selections=4)
