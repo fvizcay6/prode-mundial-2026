@@ -8,127 +8,111 @@ import json
 # 1. CONFIGURACIÓN Y CONEXIÓN
 # ==========================================
 st.set_page_config(page_title="Admin Prode 2026", layout="wide", page_icon="👮‍♂️")
-st.title("👮‍♂️ PANEL DE CONTROL Y PUNTUACIÓN")
 
 NOMBRE_HOJA_GOOGLE = "DB_Prode_2026"
 
-# --- CARGA DE RESULTADOS REALES (SIMULACIÓN) ---
-# AQUI ES DONDE TÚ CARGARÁS LA "VERDAD" A MEDIDA QUE PASE EL MUNDIAL
-# Por ahora, inventamos que estos son los resultados para probar el cálculo.
-RESULTADOS_REALES = {
-    # PARTE 1: PARTIDOS DE GRUPO (Regla 2-i: 1 punto)
-    # Formato: "P_G[Grupo]_[Partido]": "Resultado" (L, E, V)
-    "PARTIDOS": {
-        "P_GA_1": "L", "P_GA_2": "E", # Grupo A
-        "P_GB_1": "V", # Grupo B... y así con todos
-    },
-    
-    # PARTE 2: CLASIFICADOS Y POSICIONES (Reglas 1-a, 1-b, 1-c)
-    # Formato: [1ro, 2do, Puntos_1ro, Puntos_2do]
-    # (Los puntos son para la regla C)
-    "GRUPOS": {
-        "GRUPO A": {"1": "🇲🇽 MEXICO", "2": "🇿🇦 SUDAFRICA", "pts_1": 7, "pts_2": 5},
-        "GRUPO B": {"1": "🇨🇦 CANADA", "2": "🇨🇭 SUIZA", "pts_1": 9, "pts_2": 6},
-        # ... agregar el resto ...
-    },
-    
-    # PARTE 3: FASES FINALES (Reglas d, e, f, g, h, i)
-    "OCTAVOS": ["🇲🇽 MEXICO", "🇿🇦 SUDAFRICA", "🇨🇦 CANADA", "🇨🇭 SUIZA", "🇧🇷 BRASIL"], # etc
-    "CUARTOS": ["🇲🇽 MEXICO", "🇨🇦 CANADA", "🇧🇷 BRASIL"],
-    "SEMIS": ["🇧🇷 BRASIL", "🇨🇦 CANADA"],
-    "TERCERO_EQUIPOS": ["🇫🇷 FRANCIA", "🇪🇸 ESPAÑA"], # Los que juegan por el 3er puesto
-    "TERCERO_GANADOR": "🇫🇷 FRANCIA",
-    "FINALISTAS": ["🇧🇷 BRASIL", "🇦🇷 ARGENTINA"],
-    "CAMPEON": "🇦🇷 ARGENTINA"
+# GRUPOS (Reutilizados de la app principal para construir los selectores)
+GRUPOS = {
+    "GRUPO A": ["🇲🇽 MEXICO", "🇿🇦 SUDAFRICA", "🇰🇷 COREA DEL SUR", "🌍 REP. EUR (DIN/MACE)"],
+    "GRUPO B": ["🇨🇦 CANADA", "🌍 REP. EUR (ITA/BOS)", "🇶🇦 QATAR", "🇨🇭 SUIZA"],
+    "GRUPO C": ["🇧🇷 BRASIL", "🇲🇦 MARRUECOS", "🇭🇹 HAITI", "🏴󠁧󠁢󠁳󠁣󠁴󠁿 ESCOCIA"],
+    "GRUPO D": ["🇺🇸 USA", "🇵🇾 PARAGUAY", "🇦🇺 AUSTRALIA", "🌍 REP. EUR (RUM/TUR)"],
+    "GRUPO E": ["🇩🇪 ALEMANIA", "🇨🇼 CURAZAO", "🇨🇮 COSTA DE MARFIL", "🇪🇨 ECUADOR"],
+    "GRUPO F": ["🇳🇱 HOLANDA", "🇯🇵 JAPON", "🌍 REP. EUR (SWE/UKR)", "🇹🇳 TUNEZ"],
+    "GRUPO G": ["🇧🇪 BELGICA", "🇪🇬 EGIPTO", "🇮🇷 IRAN", "🇳🇿 NUEVA ZELANDA"],
+    "GRUPO H": ["🇪🇸 ESPAÑA", "🇨🇻 CABO VERDE", "🇸🇦 ARABIA SAUDITA", "🇺🇾 URUGUAY"],
+    "GRUPO I": ["🇫🇷 FRANCIA", "🇸🇳 SENEGAL", "🌍 REP. (BOL/IRAK)", "🇳🇴 NORUEGA"],
+    "GRUPO J": ["🇦🇷 ARGENTINA", "🇩🇿 ARGELIA", "🇦🇹 AUSTRIA", "🇯🇴 JORDANIA"],
+    "GRUPO K": ["🇵🇹 PORTUGAL", "🇯🇲 JAMAICA", "🇺🇿 UZBEKISTAN", "🇨🇴 COLOMBIA"],
+    "GRUPO L": ["🏴󠁧󠁢󠁥󠁮󠁧󠁿 INGLATERRA", "🇭🇷 CROACIA", "🇬🇭 GHANA", "🇵🇦 PANAMA"],
 }
+TODOS_LOS_EQUIPOS = sorted([eq for lista in GRUPOS.values() for eq in lista])
+FIXTURE_INDICES = [(0,1), (2,3), (0,2), (1,3), (0,3), (1,2)]
 
 # ==========================================
 # 2. FUNCIÓN DE CÁLCULO (EL MOTOR)
 # ==========================================
 def calcular_puntaje_participante(datos_usuario, reales):
     puntos = 0
-    desglose = {} # Para saber de dónde salen los puntos
+    desglose = {}
 
     # --- 1. RONDA PARTIDO X PARTIDO (Regla 2-i) ---
     pts_partidos = 0
     for key, resultado_real in reales["PARTIDOS"].items():
-        pronostico = datos_usuario.get(key, "-")
-        if pronostico == resultado_real:
-            pts_partidos += 1
+        if resultado_real != "-": # Solo cuenta si el resultado real fue cargado
+            pronostico = datos_usuario.get(key, "-")
+            if pronostico == resultado_real:
+                pts_partidos += 1
     puntos += pts_partidos
     desglose['Partidos'] = pts_partidos
 
     # --- 2. FASE DE GRUPOS (Reglas 1-a, 1-b, 1-c) ---
     pts_grupos = 0
     for grupo, data_real in reales["GRUPOS"].items():
-        # Usuario predijo:
-        u_1 = datos_usuario.get(f"{grupo}_1")
-        u_2 = datos_usuario.get(f"{grupo}_2")
-        
-        real_1 = data_real["1"]
-        real_2 = data_real["2"]
-        pts_reales_1 = data_real["pts_1"] # Puntos reales que obtuvo el equipo
-        pts_reales_2 = data_real["pts_2"]
+        if data_real["1"] != "-" and data_real["2"] != "-": # Solo calcula si el grupo está finalizado
+            # Usuario predijo:
+            u_1 = datos_usuario.get(f"{grupo}_1")
+            u_2 = datos_usuario.get(f"{grupo}_2")
+            
+            real_1 = data_real["1"]
+            real_2 = data_real["2"]
+            pts_reales_1 = data_real["pts_1"] 
+            pts_reales_2 = data_real["pts_2"]
+            clasificados_real = [real_1, real_2]
+            
+            # Regla A & C (1er puesto predicho)
+            if u_1 in clasificados_real:
+                pts_grupos += 10 # Regla A: Acertar equipo clasificado
+                # Regla C: Sumar puntos reales
+                if u_1 == real_1: pts_grupos += pts_reales_1
+                elif u_1 == real_2: pts_grupos += pts_reales_2
+            
+            # Regla A & C (2do puesto predicho)
+            if u_2 in clasificados_real:
+                pts_grupos += 10 # Regla A: Acertar equipo clasificado
+                # Regla C
+                if u_2 == real_1: pts_grupos += pts_reales_1
+                elif u_2 == real_2: pts_grupos += pts_reales_2
 
-        # Regla A: Acertar equipo clasificado (10 pts)
-        # Verificamos si los equipos del usuario están en el Top 2 Real
-        clasificados_real = [real_1, real_2]
-        
-        # Chequeamos el 1ro del usuario
-        if u_1 in clasificados_real:
-            pts_grupos += 10 # Regla A
-            # Regla C: Sumar los puntos que hizo el equipo
-            if u_1 == real_1: pts_grupos += pts_reales_1
-            elif u_1 == real_2: pts_grupos += pts_reales_2
-        
-        # Chequeamos el 2do del usuario
-        if u_2 in clasificados_real:
-            pts_grupos += 10 # Regla A
-            # Regla C
-            if u_2 == real_1: pts_grupos += pts_reales_1
-            elif u_2 == real_2: pts_grupos += pts_reales_2
-
-        # Regla B: Acertar posición exacta (5 pts extra)
-        if u_1 == real_1: pts_grupos += 5
-        if u_2 == real_2: pts_grupos += 5
+            # Regla B: Acertar posición exacta (5 pts extra)
+            if u_1 == real_1: pts_grupos += 5
+            if u_2 == real_2: pts_grupos += 5
 
     puntos += pts_grupos
     desglose['Grupos'] = pts_grupos
 
-    # --- 3. FASES FINALES ---
+    # --- 3. FASES FINALES (Reglas d, e, f, g, h, i) ---
     pts_playoff = 0
     
-    # Regla D: Octavos (15 pts por equipo)
-    # El usuario guardó Octavos como un string separado por comas, hay que convertirlo a lista
+    # Octavos (Regla D: 15 pts)
     u_octavos = datos_usuario.get("Octavos", "").split(", ")
     for eq in u_octavos:
         if eq in reales["OCTAVOS"]: pts_playoff += 15
         
-    # Regla E: Cuartos (20 pts)
+    # Cuartos (Regla E: 20 pts)
     u_cuartos = datos_usuario.get("Cuartos", "").split(", ")
     for eq in u_cuartos:
         if eq in reales["CUARTOS"]: pts_playoff += 20
 
-    # Regla F: Semis (25 pts)
+    # Semis (Regla F: 25 pts)
     u_semis = datos_usuario.get("Semis", "").split(", ")
     for eq in u_semis:
         if eq in reales["SEMIS"]: pts_playoff += 25
 
-    # Regla G: Tercer Puesto
+    # Regla G: Tercer Puesto (30 pts por equipo + 35 pts por acierto)
     u_tercero = datos_usuario.get("Tercero")
-    # 30 pts por acertar equipo en partido 3er puesto (difícil de validar sin lista especifica, asumimos si acertó el ganador del 3ro)
-    if u_tercero in reales["TERCERO_EQUIPOS"]: pts_playoff += 30
-    if u_tercero == reales["TERCERO_GANADOR"]: pts_playoff += 35
+    if u_tercero in reales["TERCERO_EQUIPOS"]: pts_playoff += 30 # Acertó uno de los dos equipos
+    if u_tercero == reales["TERCERO_GANADOR"]: pts_playoff += 35 # Acertó el ganador exacto
 
     # Regla H: Finalistas (40 pts) y Regla I: Campeón (50 pts)
     u_campeon = datos_usuario.get("Campeon")
     u_sub = datos_usuario.get("Subcampeon")
     
-    # Finalistas
+    # Regla H: Finalistas
     if u_campeon in reales["FINALISTAS"]: pts_playoff += 40
     if u_sub in reales["FINALISTAS"]: pts_playoff += 40
     
-    # Campeón (Bonus)
+    # Regla I: Campeón (Bonus)
     if u_campeon == reales["CAMPEON"]: pts_playoff += 50
     
     puntos += pts_playoff
@@ -138,25 +122,168 @@ def calcular_puntaje_participante(datos_usuario, reales):
     return desglose
 
 # ==========================================
-# 3. INTERFAZ Y LECTURA DE DATOS
+# 3. INTERFAZ DE CARGA DE RESULTADOS REALES
+# ==========================================
+
+st.title("⚽ Administrador de Resultados Reales")
+st.markdown("---")
+
+# Diccionarios para almacenar los datos cargados dinámicamente
+partidos_reales = {}
+grupos_reales = {}
+octavos_reales = []
+cuartos_reales = []
+semis_reales = []
+tercero_equipos_reales = []
+tercero_ganador_real = "-"
+finalistas_reales = []
+campeon_real = "-"
+
+# --- SECCIÓN 1: GRUPOS REALES ---
+st.header("1. Carga de Fases de Grupos (Resultados Reales)")
+cols_pantalla = st.columns(2)
+idx_col = 0
+
+for nombre_grupo, equipos in GRUPOS.items():
+    codigo = nombre_grupo.split(" ")[1]
+    with cols_pantalla[idx_col % 2]: 
+        with st.expander(f"**RESULTADOS REALES:** {nombre_grupo}", expanded=False):
+            st.markdown("##### Partidos (Regla 2-i: 1 Punto)")
+            for i, (idx_L, idx_V) in enumerate(FIXTURE_INDICES):
+                local, visita = equipos[idx_L], equipos[idx_V]
+                col_btn, col_res = st.columns([1, 4])
+                with col_btn:
+                    res = st.radio(
+                        f"P_G{codigo}_{i+1}", 
+                        ["-", "L", "E", "V"], 
+                        horizontal=True, 
+                        label=f"{local} vs {visita}",
+                        index=0 # Sin seleccionar por defecto
+                    )
+                with col_res:
+                    st.caption(f"Resultado: {local} (L), Empate (E), {visita} (V)")
+                
+                partidos_reales[f"P_G{codigo}_{i+1}"] = res
+            
+            st.markdown("##### Clasificados y Puntos (Reglas 1-a, 1-b, 1-c)")
+            p1 = st.selectbox("🥇 1º REAL", ["-"]+equipos, key=f"Real_{codigo}_1", index=0)
+            pts1 = st.number_input("Puntos Reales del 1º (Regla 1-c)", 0, 9, key=f"Real_{codigo}_pts1")
+            
+            p2 = st.selectbox("🥈 2º REAL", ["-"]+equipos, key=f"Real_{codigo}_2", index=0)
+            pts2 = st.number_input("Puntos Reales del 2º (Regla 1-c)", 0, 9, key=f"Real_{codigo}_pts2")
+            
+            grupos_reales[nombre_grupo] = {"1": p1, "2": p2, "pts_1": pts1, "pts_2": pts2}
+
+    idx_col += 1
+
+st.markdown("---")
+
+# --- SECCIÓN 2: FASES FINALES REALES ---
+st.header("2. Carga de Fases Finales (Equipos Clasificados)")
+
+# Octavos
+octavos_reales = st.multiselect(
+    "🏆 EQUIPOS REALES en Octavos de Final (16 equipos)", 
+    TODOS_LOS_EQUIPOS, 
+    max_selections=16,
+    help="Solo los equipos que jugaron realmente los Octavos. (Regla 1-d: 15 Pts)"
+)
+
+# Cuartos
+cuartos_reales = st.multiselect(
+    "🏆 EQUIPOS REALES en Cuartos de Final (8 equipos)", 
+    octavos_reales if len(octavos_reales) == 16 else TODOS_LOS_EQUIPOS,
+    max_selections=8,
+    help="Solo los equipos que jugaron realmente los Cuartos. (Regla 1-e: 20 Pts)"
+)
+
+# Semis
+semis_reales = st.multiselect(
+    "🏆 EQUIPOS REALES en Semifinales (4 equipos)", 
+    cuartos_reales if len(cuartos_reales) == 8 else TODOS_LOS_EQUIPOS,
+    max_selections=4,
+    help="Solo los equipos que llegaron a Semifinales. (Regla 1-f: 25 Pts)"
+)
+
+# Podio
+st.subheader("3. Podio Final (Resultados Reales)")
+opc_podio = semis_reales if len(semis_reales) == 4 else TODOS_LOS_EQUIPOS
+
+col_cam, col_sub, col_ter = st.columns(3)
+
+with col_cam:
+    campeon_real = st.selectbox("🥇 CAMPEÓN REAL (Regla 1-h/i)", ["-"]+opc_podio, key="Real_Campeon")
+
+with col_sub:
+    subcampeon_real = st.selectbox("🥈 SUBCAMPEÓN REAL (Regla 1-h)", ["-"]+opc_podio, key="Real_Sub")
+
+with col_ter:
+    tercero_ganador_real = st.selectbox("🥉 TERCER PUESTO REAL (Regla 1-g: 35 Pts)", ["-"]+opc_podio, key="Real_3ro_Ganador")
+    
+    # Asumimos que los que jugaron por el 3er puesto son 
+    # todos los semifinalistas menos el Campeón y Subcampeón
+    jugaron_tercero = [eq for eq in semis_reales if eq not in [campeon_real, subcampeon_real]]
+    if len(jugaron_tercero) == 2:
+        tercero_equipos_reales = jugaron_tercero
+    else:
+        # En caso de simulación incompleta, asumimos que el ganador es el que se eligió
+        if tercero_ganador_real != "-":
+            # El equipo que perdió la final es el Subcampeón.
+            # El equipo que perdió el 3er puesto (el 4to) lo asumimos como el único otro en semis.
+            # Esto es complejo, pero simplificamos la lista para la regla 1-g
+            tercero_equipos_reales = [tercero_ganador_real]
+            
+            
+
+# --- CREAR EL DICCIONARIO FINAL DE "LA VERDAD" ---
+RESULTADOS_REALES_DINAMICO = {
+    "PARTIDOS": partidos_reales,
+    "GRUPOS": grupos_reales,
+    "OCTAVOS": octavos_reales,
+    "CUARTOS": cuartos_reales,
+    "SEMIS": semis_reales,
+    "TERCERO_EQUIPOS": tercero_equipos_reales, 
+    "TERCERO_GANADOR": tercero_ganador_real,
+    "FINALISTAS": [campeon_real, subcampeon_real] if campeon_real != "-" and subcampeon_real != "-" else [],
+    "CAMPEON": campeon_real
+}
+
+# ==========================================
+# 4. EJECUCIÓN DEL CÁLCULO
 # ==========================================
 def obtener_datos():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    contenido_json_texto = st.secrets["google_json"]["contenido_archivo"]
-    creds_dict = json.loads(contenido_json_texto, strict=False)
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    client = gspread.authorize(creds)
-    sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
-    return sheet.get_all_records()
+    # Intentar obtener credenciales. Si falla, el usuario aún puede simular sin DB.
+    try:
+        contenido_json_texto = st.secrets["google_json"]["contenido_archivo"]
+        creds_dict = json.loads(contenido_json_texto, strict=False)
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        client = gspread.authorize(creds)
+        sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
+        return sheet.get_all_records()
+    except Exception as e:
+        st.error(f"❌ ERROR: No se pudo conectar a Google Sheets. Revisa los Secrets o el nombre de la hoja. ({e})")
+        return None
 
-if st.button("🔄 ACTUALIZAR TABLA DE POSICIONES"):
+st.markdown("---")
+st.header("TABLA DE POSICIONES")
+st.warning("⚠️ **Aviso:** El cálculo se realiza en base a los resultados que usted seleccionó arriba.")
+
+if st.button("🔄 CALCULAR PUNTAJES Y ACTUALIZAR TABLA"):
+    
+    # Validar que al menos haya resultados cargados
+    if not any(RESULTADOS_REALES_DINAMICO["PARTIDOS"].values()):
+        st.info("Debe cargar al menos un resultado de partido para comenzar a calcular.")
+    
     with st.spinner("Descargando predicciones y calculando..."):
-        try:
-            datos_usuarios = obtener_datos()
+        datos_usuarios = obtener_datos()
+        
+        if datos_usuarios is not None:
             tabla = []
             
             for usuario in datos_usuarios:
-                puntajes = calcular_puntaje_participante(usuario, RESULTADOS_REALES)
+                # Usamos el diccionario cargado dinámicamente
+                puntajes = calcular_puntaje_participante(usuario, RESULTADOS_REALES_DINAMICO)
                 fila = {
                     "Participante": usuario["Participante"],
                     "TOTAL": puntajes["TOTAL"],
@@ -166,26 +293,30 @@ if st.button("🔄 ACTUALIZAR TABLA DE POSICIONES"):
                 }
                 tabla.append(fila)
             
-            # Crear DataFrame y Ordenar
+            # Crear DataFrame, Ordenar y aplicar Reglas de Desempate (Regla 3-j)
             df = pd.DataFrame(tabla)
-            df = df.sort_values(by=["TOTAL", "Grupos", "Playoffs"], ascending=False).reset_index(drop=True)
-            df.index += 1 # Para que arranque en puesto 1
             
-            st.success("✅ Cálculo completado")
+            # 1º Criterio de desempate: Mayor Pts. en fase de grupos.
+            # 2º Criterio de desempate: Mayor Pts. sumados en Playoffs.
+            df = df.sort_values(
+                by=["TOTAL", "Grupos", "Playoffs"], 
+                ascending=[False, False, False]
+            ).reset_index(drop=True)
+            
+            df.index += 1
+            
+            st.success("✅ Cálculo completado (basado en resultados cargados).")
             
             # MOSTRAR TABLA
             st.dataframe(
                 df, 
                 use_container_width=True,
                 column_config={
-                    "TOTAL": st.column_config.NumberColumn("🏆 PUNTOS", format="%d"),
+                    "TOTAL": st.column_config.NumberColumn("🏆 PUNTOS TOTALES", format="%d"),
                 }
             )
             
             # PODIO
             if not df.empty:
-                st.markdown("### 🥇 LÍDER ACTUAL")
-                st.header(f"{df.iloc[0]['Participante']} ({df.iloc[0]['TOTAL']} pts)")
-
-        except Exception as e:
-            st.error(f"Error: {e}")
+                st.markdown("---")
+                st.subheader(f"🥇 LÍDER ACTUAL: {df.iloc[0]['Participante']} ({df.iloc[0]['TOTAL']} pts)")
