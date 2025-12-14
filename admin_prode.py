@@ -36,18 +36,22 @@ st.header("👮‍♂️ PANEL DE CONTROL Y PUNTUACIÓN")
 # 2. FUNCIÓN DE CÁLCULO (EL MOTOR DE PUNTOS)
 # ==========================================
 
-# Función auxiliar para limpiar la entrada de las fases finales
+# FUNCIÓN CORREGIDA
 def limpiar_prediccion_fase(datos_usuario, fase):
     """
-    Obtiene la predicción de una fase final (Octavos, Cuartos, Semis)
-    y la limpia para ser robusta:
-    1. Quita espacios al inicio/fin.
-    2. Convierte el string separado por comas en una lista.
-    3. Elimina elementos vacíos resultantes (como [''] o elementos de solo espacios).
+    Obtiene y limpia la predicción de una fase final (Octavos, Cuartos, Semis).
+    Esto es crucial para evitar que celdas vacías sumen puntos (error de 'puntos fantasma').
     """
     input_str = datos_usuario.get(fase, "")
-    # Usa list comprehension para limpiar y filtrar elementos vacíos
-    return [x.strip() for x in input_str.split(", ") if x.strip()]
+    
+    # 1. Quitar espacios del string completo y comprobar si queda vacío
+    input_str = input_str.strip()
+    if not input_str:
+        return [] # Devuelve lista vacía si la celda no contenía texto real.
+
+    # 2. Dividir por COMA (más seguro) y luego limpiar cada elemento.
+    # El 'if x.strip()' final elimina elementos vacíos que resulten de comas sobrantes.
+    return [x.strip() for x in input_str.split(",") if x.strip()]
 
 def calcular_puntaje_participante(datos_usuario, reales):
     puntos = 0
@@ -104,17 +108,17 @@ def calcular_puntaje_participante(datos_usuario, reales):
     pts_tercer_puesto = 0 
     pts_final_campeon = 0 
     
-    # D: Octavos (15 pts) - USAMOS LIMPIEZA
+    # D: Octavos (15 pts) - USANDO FUNCIÓN CORREGIDA
     u_octavos = limpiar_prediccion_fase(datos_usuario, "Octavos")
     for eq in u_octavos:
         if eq in reales["OCTAVOS"]: pts_octavos += 15
         
-    # E: Cuartos (20 pts) - USAMOS LIMPIEZA
+    # E: Cuartos (20 pts) - USANDO FUNCIÓN CORREGIDA
     u_cuartos = limpiar_prediccion_fase(datos_usuario, "Cuartos")
     for eq in u_cuartos:
         if eq in reales["CUARTOS"]: pts_cuartos += 20
 
-    # F: Semis (25 pts) + G: 3er Puesto (30 pts por jugar) - USAMOS LIMPIEZA
+    # F: Semis (25 pts) + G: 3er Puesto (30 pts por jugar) - USANDO FUNCIÓN CORREGIDA
     u_semis = limpiar_prediccion_fase(datos_usuario, "Semis")
     for eq in u_semis:
         if eq in reales["SEMIS"]: 
