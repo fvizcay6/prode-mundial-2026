@@ -9,49 +9,35 @@ import json
 # ==========================================
 st.set_page_config(page_title="Admin Prode 2026", layout="wide", page_icon="🔒")
 
-# --- FUNCIÓN DE LOGIN ---
 def check_password():
-    """Retorna True si el usuario se loguea correctamente."""
-    
     def password_entered():
-        """Verifica si el usuario y contraseña coinciden con los secrets."""
         if st.session_state["username"] in st.secrets["passwords"] and \
            st.session_state["password"] == st.secrets["passwords"][st.session_state["username"]]:
             st.session_state["password_correct"] = True
-            # Borramos la contraseña de la memoria por seguridad
             del st.session_state["password"]  
             del st.session_state["username"]
         else:
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        # Primera vez: mostramos los inputs
         st.markdown("### 🔒 Acceso Restringido")
-        st.caption("Por seguridad, debe iniciar sesión cada vez que abra la ventana.")
         st.text_input("Usuario", key="username")
         st.text_input("Contraseña", type="password", key="password")
         st.button("Ingresar", on_click=password_entered)
         return False
-    
     elif not st.session_state["password_correct"]:
-        # Contraseña incorrecta
         st.markdown("### 🔒 Acceso Restringido")
         st.text_input("Usuario", key="username")
         st.text_input("Contraseña", type="password", key="password")
         st.button("Ingresar", on_click=password_entered)
-        st.error("❌ Usuario o contraseña incorrectos")
+        st.error("❌ Datos incorrectos")
         return False
-    
     else:
-        # Contraseña correcta
         return True
 
-# --- BLOQUE PRINCIPAL (SOLO SI LOGUEADO) ---
 if check_password():
 
     NOMBRE_HOJA_GOOGLE = "DB_Prode_2026"
-
-    # GRUPOS
     GRUPOS = {
         "GRUPO A": ["🇲🇽 MEXICO", "🇿🇦 SUDAFRICA", "🇰🇷 COREA DEL SUR", "🌍 REP. EUR (DIN/MACE)"],
         "GRUPO B": ["🇨🇦 CANADA", "🌍 REP. EUR (ITA/BOS)", "🇶🇦 QATAR", "🇨🇭 SUIZA"],
@@ -70,18 +56,13 @@ if check_password():
     FIXTURE_INDICES = [(0,1), (2,3), (0,2), (1,3), (0,3), (1,2)]
 
     st.title("⚽ Administrador de Resultados Reales")
-    st.caption("✅ Sesión Iniciada Correctamente | Cerrar la pestaña cerrará la sesión.")
-    
     if st.button("Cerrar Sesión"):
         del st.session_state["password_correct"]
         st.rerun()
 
-    st.header("👮‍♂️ PANEL DE CONTROL Y PUNTUACIÓN")
-
     # ==========================================
-    # 2. GESTIÓN DE MEMORIA (GOOGLE SHEETS)
+    # 2. CONEXIÓN Y GESTIÓN DB
     # ==========================================
-
     def get_client():
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         contenido_json_texto = st.secrets["google_json"]["contenido_archivo"]
@@ -94,59 +75,52 @@ if check_password():
             client = get_client()
             sheet = client.open(NOMBRE_HOJA_GOOGLE).worksheet("Resultados_Admin")
             val = sheet.acell('A1').value
-            if val: return json.loads(val)
-        except Exception: return None
+            return json.loads(val) if val else None
+        except: return None
 
     def guardar_memoria(datos):
+        """Guarda la configuración de resultados en la hoja Resultados_Admin"""
         try:
             client = get_client()
-            try:
-                sheet = client.open(NOMBRE_HOJA_GOOGLE).worksheet("Resultados_Admin")
-            except gspread.exceptions.WorksheetNotFound:
-                st.error("❌ No existe la hoja 'Resultados_Admin'. Créala en Google Sheets.")
-                return False
+            sheet = client.open(NOMBRE_HOJA_GOOGLE).worksheet("Resultados_Admin")
             sheet.update_acell('A1', json.dumps(datos))
             return True
         except Exception as e:
-            st.error(f"Error guardando: {e}")
-            return False
+            st.error(f"Error guardando resultados: {e}"); return False
+
+    def guardar_cierre_dia(ranking_dict):
+        """Guarda la FOTO del ranking en la hoja Ranking_Anterior"""
+        try:
+            client = get_client()
+            sheet = client.open(NOMBRE_HOJA_GOOGLE).worksheet("Ranking_Anterior")
+            sheet.update_acell('A1', json.dumps(ranking_dict))
+            return True
+        except Exception as e:
+            st.error(f"Error guardando historial: {e}"); return False
 
     def resetear_memoria():
-        vacio = { 
-            "PARTIDOS": {}, "GRUPOS": {}, "OCTAVOS": [], "CUARTOS": [], 
-            "SEMIS": [], "TERCERO_EQUIPOS": [], "TERCERO_GANADOR": "-", 
-            "FINALISTAS": [], "CAMPEON": "-", "SUBCAMPEON": "-"
-        }
+        vacio = { "PARTIDOS": {}, "GRUPOS": {}, "OCTAVOS": [], "CUARTOS": [], "SEMIS": [], "TERCERO_GANADOR": "-", "FINALISTAS": [], "CAMPEON": "-", "SUBCAMPEON": "-"}
         return guardar_memoria(vacio)
 
-    # --- CARGAR ESTADO AL INICIO ---
     ESTADO_GUARDADO = cargar_memoria()
-    if ESTADO_GUARDADO is None:
-        ESTADO_GUARDADO = { "PARTIDOS": {}, "GRUPOS": {}, "OCTAVOS": [], "CUARTOS": [], "SEMIS": [], "TERCERO_GANADOR": "-", "FINALISTAS": [], "CAMPEON": "-", "SUBCAMPEON": "-"}
+    if ESTADO_GUARDADO is None: ESTADO_GUARDADO = { "PARTIDOS": {}, "GRUPOS": {}, "OCTAVOS": [], "CUARTOS": [], "SEMIS": [], "TERCERO_GANADOR": "-", "FINALISTAS": [], "CAMPEON": "-", "SUBCAMPEON": "-"}
 
     # ==========================================
-    # 3. FUNCIONES DE CÁLCULO
+    # 3. CÁLCULO
     # ==========================================
     def limpiar_prediccion_fase(datos_usuario, fase):
         input_str = datos_usuario.get(fase, "")
-        input_str = input_str.strip()
-        if not input_str: return []
-        return [x.strip() for x in input_str.split(",") if x.strip()]
+        return [x.strip() for x in input_str.split(",") if x.strip()] if input_str.strip() else []
 
     def calcular_puntaje_participante(datos_usuario, reales):
-        puntos = 0
-        desglose = {}
-        
-        # 1. Partidos
+        puntos = 0; desglose = {}
+        # Partidos
         pts_partidos = 0
         if "PARTIDOS" in reales:
             for key, res_real in reales["PARTIDOS"].items():
-                if res_real != "-":
-                    if datos_usuario.get(key, "-") == res_real: pts_partidos += 1
-        puntos += pts_partidos
-        desglose['Partidos'] = pts_partidos
-
-        # 2. Grupos
+                if res_real != "-" and datos_usuario.get(key, "-") == res_real: pts_partidos += 1
+        puntos += pts_partidos; desglose['Partidos'] = pts_partidos
+        # Grupos
         pts_grupos = 0
         if "GRUPOS" in reales:
             for grupo, data in reales["GRUPOS"].items():
@@ -154,211 +128,146 @@ if check_password():
                     real_top3 = [data["1"], data["2"], data["3"]]
                     pts_reales = {data["1"]: data.get("pts_1",0), data["2"]: data.get("pts_2",0), data["3"]: data.get("pts_3",0)}
                     for i in [1,2,3]:
-                        u_eq = datos_usuario.get(f"{grupo}_{i}")
-                        r_eq = data[str(i)]
+                        u_eq = datos_usuario.get(f"{grupo}_{i}"); r_eq = data[str(i)]
                         if u_eq in real_top3:
                             pts_grupos += 10
                             if u_eq in pts_reales: pts_grupos += pts_reales[u_eq]
                         if u_eq == r_eq: pts_grupos += 5
-        puntos += pts_grupos
-        desglose['Grupos'] = pts_grupos
-
-        # 3. Playoffs
-        pts_oct = 0; pts_cua = 0; pts_sem = 0; pts_ter = 0; pts_fin = 0
-        
+        puntos += pts_grupos; desglose['Grupos'] = pts_grupos
+        # Playoffs
+        pts_oct=0; pts_cua=0; pts_sem=0; pts_ter=0; pts_fin=0
         u_oct = limpiar_prediccion_fase(datos_usuario, "Octavos")
         if "OCTAVOS" in reales:
             for eq in u_oct: 
                 if eq in reales["OCTAVOS"]: pts_oct += 15
-        
         u_cua = limpiar_prediccion_fase(datos_usuario, "Cuartos")
         if "CUARTOS" in reales:
             for eq in u_cua: 
                 if eq in reales["CUARTOS"]: pts_cua += 20
-                
         u_sem = limpiar_prediccion_fase(datos_usuario, "Semis")
         if "SEMIS" in reales:
             for eq in u_sem:
                 if eq in reales["SEMIS"]: 
                     pts_sem += 25
-                    camp = reales.get("CAMPEON","-"); sub = reales.get("SUBCAMPEON","-")
-                    if eq != camp and eq != sub and camp != "-": pts_ter += 30
-        
+                    if eq != reales.get("CAMPEON","-") and eq != reales.get("SUBCAMPEON","-") and reales.get("CAMPEON","-") != "-": pts_ter += 30
         u_ter = datos_usuario.get("Tercero")
         if "TERCERO_GANADOR" in reales and u_ter == reales["TERCERO_GANADOR"]: pts_ter += 35
-        
         u_cam = datos_usuario.get("Campeon"); u_sub = datos_usuario.get("Subcampeon")
         if "FINALISTAS" in reales:
             if u_cam in reales["FINALISTAS"]: pts_fin += 40
             if u_sub in reales["FINALISTAS"]: pts_fin += 40
         if "CAMPEON" in reales and u_cam == reales["CAMPEON"]: pts_fin += 50
-        
         puntos += pts_oct + pts_cua + pts_sem + pts_ter + pts_fin
-        desglose['Octavos']=pts_oct; desglose['Cuartos']=pts_cua; desglose['Semifinales']=pts_sem
-        desglose['Tercer Puesto']=pts_ter; desglose['Final/Campeon']=pts_fin; desglose['TOTAL']=puntos
+        desglose.update({'Octavos':pts_oct, 'Cuartos':pts_cua, 'Semifinales':pts_sem, 'Tercer Puesto':pts_ter, 'Final/Campeon':pts_fin, 'TOTAL':puntos})
         return desglose
 
     # ==========================================
-    # 4. INTERFAZ DE CARGA
+    # 4. INTERFAZ
     # ==========================================
+    st.header("👮‍♂️ PANEL DE CONTROL")
 
     def get_index_option(options, value):
         try: return options.index(value)
         except: return 0
 
-    partidos_reales = {}
-    grupos_reales = {}
-
+    partidos_reales = {}; grupos_reales = {}
     st.subheader("1. Carga de Fases de Grupos")
-    cols_pantalla = st.columns(2)
-    idx_col = 0
-
+    cols_pantalla = st.columns(2); idx_col = 0
     for nombre_grupo, equipos in GRUPOS.items():
         codigo = nombre_grupo.split(" ")[1]
         datos_grupo_saved = ESTADO_GUARDADO.get("GRUPOS", {}).get(nombre_grupo, {})
-        
         with cols_pantalla[idx_col % 2]: 
-            with st.expander(f"**RESULTADOS: {nombre_grupo}**", expanded=False):
+            with st.expander(f"**{nombre_grupo}**", expanded=False):
                 st.markdown("##### Partidos")
                 for i, (idx_L, idx_V) in enumerate(FIXTURE_INDICES):
                     local, visita = equipos[idx_L], equipos[idx_V]
                     key_match = f"P_G{codigo}_{i+1}"
                     val_saved = ESTADO_GUARDADO.get("PARTIDOS", {}).get(key_match, "-")
                     opts = ["-", "L", "E", "V"]
-                    
-                    res = st.radio(label=f"{local} vs {visita}", options=opts, horizontal=True, key=f"R_{key_match}", index=get_index_option(opts, val_saved))
-                    partidos_reales[key_match] = res
-                
+                    partidos_reales[key_match] = st.radio(f"{local} vs {visita}", opts, horizontal=True, key=f"R_{key_match}", index=get_index_option(opts, val_saved))
                 st.markdown("##### Clasificados")
-                idx_1 = get_index_option(["-"]+equipos, datos_grupo_saved.get("1", "-"))
-                p1 = st.selectbox("🥇 1º REAL", ["-"]+equipos, key=f"S1_{codigo}", index=idx_1)
+                p1 = st.selectbox("🥇 1º", ["-"]+equipos, key=f"S1_{codigo}", index=get_index_option(["-"]+equipos, datos_grupo_saved.get("1", "-")))
                 pts1 = st.number_input("Pts 1º", 0, 9, value=datos_grupo_saved.get("pts_1", 0), key=f"N1_{codigo}")
-                
-                idx_2 = get_index_option(["-"]+equipos, datos_grupo_saved.get("2", "-"))
-                p2 = st.selectbox("🥈 2º REAL", ["-"]+equipos, key=f"S2_{codigo}", index=idx_2)
+                p2 = st.selectbox("🥈 2º", ["-"]+equipos, key=f"S2_{codigo}", index=get_index_option(["-"]+equipos, datos_grupo_saved.get("2", "-")))
                 pts2 = st.number_input("Pts 2º", 0, 9, value=datos_grupo_saved.get("pts_2", 0), key=f"N2_{codigo}")
-                
-                idx_3 = get_index_option(["-"]+equipos, datos_grupo_saved.get("3", "-"))
-                p3 = st.selectbox("🥉 3º REAL", ["-"]+equipos, key=f"S3_{codigo}", index=idx_3)
+                p3 = st.selectbox("🥉 3º", ["-"]+equipos, key=f"S3_{codigo}", index=get_index_option(["-"]+equipos, datos_grupo_saved.get("3", "-")))
                 pts3 = st.number_input("Pts 3º", 0, 9, value=datos_grupo_saved.get("pts_3", 0), key=f"N3_{codigo}")
-                
                 grupos_reales[nombre_grupo] = {"1": p1, "2": p2, "3": p3, "pts_1": pts1, "pts_2": pts2, "pts_3": pts3}
         idx_col += 1
 
     st.markdown("---")
-    st.subheader("2. Carga de Fases Finales")
-
-    saved_oct = ESTADO_GUARDADO.get("OCTAVOS", [])
-    saved_cua = ESTADO_GUARDADO.get("CUARTOS", [])
-    saved_sem = ESTADO_GUARDADO.get("SEMIS", [])
-
-    octavos_reales = st.multiselect("🏆 Octavos (16)", TODOS_LOS_EQUIPOS, default=saved_oct, max_selections=16)
-
+    st.subheader("2. Fases Finales")
+    octavos_reales = st.multiselect("🏆 Octavos (16)", TODOS_LOS_EQUIPOS, default=ESTADO_GUARDADO.get("OCTAVOS", []), max_selections=16)
     opc_cuartos = octavos_reales if len(octavos_reales)==16 else TODOS_LOS_EQUIPOS
-    valid_saved_cua = [x for x in saved_cua if x in opc_cuartos]
-    cuartos_reales = st.multiselect("🏆 Cuartos (8)", opc_cuartos, default=valid_saved_cua, max_selections=8)
-
+    cuartos_reales = st.multiselect("🏆 Cuartos (8)", opc_cuartos, default=[x for x in ESTADO_GUARDADO.get("CUARTOS", []) if x in opc_cuartos], max_selections=8)
     opc_semis = cuartos_reales if len(cuartos_reales)==8 else TODOS_LOS_EQUIPOS
-    valid_saved_sem = [x for x in saved_sem if x in opc_semis]
-    semis_reales = st.multiselect("🏆 Semis (4)", opc_semis, default=valid_saved_sem, max_selections=4)
+    semis_reales = st.multiselect("🏆 Semis (4)", opc_semis, default=[x for x in ESTADO_GUARDADO.get("SEMIS", []) if x in opc_semis], max_selections=4)
 
-    st.subheader("3. Podio Final")
+    st.subheader("3. Podio")
     opc_podio = semis_reales if len(semis_reales) == 4 else TODOS_LOS_EQUIPOS
     col_cam, col_sub, col_ter = st.columns(3)
+    with col_cam: campeon_real = st.selectbox("🥇 CAMPEÓN", ["-"]+opc_podio, index=get_index_option(["-"]+opc_podio, ESTADO_GUARDADO.get("CAMPEON", "-")), key="Sel_Camp")
+    with col_sub: subcampeon_real = st.selectbox("🥈 SUBCAMPEÓN", ["-"]+opc_podio, index=get_index_option(["-"]+opc_podio, ESTADO_GUARDADO.get("SUBCAMPEON", "-")), key="Sel_Sub")
+    with col_ter: tercero_ganador_real = st.selectbox("🥉 3ER PUESTO", ["-"]+opc_podio, index=get_index_option(["-"]+opc_podio, ESTADO_GUARDADO.get("TERCERO_GANADOR", "-")), key="Sel_Ter")
 
-    idx_cam = get_index_option(["-"]+opc_podio, ESTADO_GUARDADO.get("CAMPEON", "-"))
-    with col_cam: campeon_real = st.selectbox("🥇 CAMPEÓN", ["-"]+opc_podio, index=idx_cam, key="Sel_Camp")
-
-    idx_sub = get_index_option(["-"]+opc_podio, ESTADO_GUARDADO.get("SUBCAMPEON", "-"))
-    with col_sub: subcampeon_real = st.selectbox("🥈 SUBCAMPEÓN", ["-"]+opc_podio, index=idx_sub, key="Sel_Sub")
-
-    idx_ter = get_index_option(["-"]+opc_podio, ESTADO_GUARDADO.get("TERCERO_GANADOR", "-"))
-    with col_ter: tercero_ganador_real = st.selectbox("🥉 3ER PUESTO (Ganador)", ["-"]+opc_podio, index=idx_ter, key="Sel_Ter")
-
-    RESULTADOS_REALES_DINAMICO = {
-        "PARTIDOS": partidos_reales,
-        "GRUPOS": grupos_reales,
-        "OCTAVOS": octavos_reales,
-        "CUARTOS": cuartos_reales,
-        "SEMIS": semis_reales,
-        "TERCERO_GANADOR": tercero_ganador_real,
-        "FINALISTAS": [campeon_real, subcampeon_real] if campeon_real != "-" and subcampeon_real != "-" else [],
-        "CAMPEON": campeon_real,
-        "SUBCAMPEON": subcampeon_real
-    }
+    RESULTADOS_REALES_DINAMICO = { "PARTIDOS": partidos_reales, "GRUPOS": grupos_reales, "OCTAVOS": octavos_reales, "CUARTOS": cuartos_reales, "SEMIS": semis_reales, "TERCERO_GANADOR": tercero_ganador_real, "FINALISTAS": [campeon_real, subcampeon_real] if campeon_real != "-" else [], "CAMPEON": campeon_real, "SUBCAMPEON": subcampeon_real }
 
     # ==========================================
-    # 5. BOTONES DE ACCIÓN (DISPOSICIÓN CORREGIDA)
+    # 5. BOTONES DE ACCIÓN (LÓGICA UNIFICADA)
     # ==========================================
-
     st.markdown("---")
-    st.header("ACCIONES DE ADMINISTRADOR")
+    st.header("ACCIONES")
 
-    # Definimos las columnas SOLO para los botones
-    col1, col2, col3 = st.columns(3)
+    c1, c2, c3 = st.columns(3)
 
-    # Capturamos el evento del clic
-    calc_clicked = col1.button("🔄 SOLO CALCULAR (Ver Tabla)", use_container_width=True)
-    save_clicked = col2.button("💾 GUARDAR RESULTADOS (Mantener)", type="primary", use_container_width=True)
-    reset_clicked = col3.button("🗑️ RESETEAR TODO (Borrar)", type="secondary", use_container_width=True)
+    # 1. BOTÓN SOLO CALCULAR
+    if c1.button("🔄 PREVISUALIZAR TABLA", use_container_width=True):
+        client = get_client()
+        datos = client.open(NOMBRE_HOJA_GOOGLE).sheet1.get_all_records()
+        if datos:
+            tabla = []
+            for u in datos:
+                pts = calcular_puntaje_participante(u, RESULTADOS_REALES_DINAMICO)
+                tabla.append({"Participante": u["Participante"], "TOTAL": pts["TOTAL"], "Partidos": pts["Partidos"], "Grupos": pts["Grupos"], "8vos": pts["Octavos"], "4tos": pts["Cuartos"], "Semis": pts["Semifinales"], "Final": pts["Final/Campeon"]})
+            df = pd.DataFrame(tabla)
+            df['Sort'] = df['8vos'] + df['4tos'] + df['Semis'] + df['Final']
+            df = df.sort_values(by=["TOTAL", "Grupos", "Sort"], ascending=False).drop(columns=['Sort']).reset_index(drop=True)
+            df.index += 1
+            st.dataframe(df, use_container_width=True)
 
-    # --- LÓGICA FUERA DE LAS COLUMNAS (Para usar el ancho completo) ---
-
-    if calc_clicked:
-        with st.spinner("Calculando..."):
+    # 2. BOTÓN "COMBO" (GUARDAR DATOS + ACTUALIZAR HISTORIAL DE RANKING)
+    if c2.button("💾 GUARDAR Y ACTUALIZAR", type="primary", use_container_width=True, help="Guarda los resultados Y actualiza el historial de posiciones para calcular subidas/bajadas."):
+        with st.spinner("Procesando datos y ranking..."):
+            # A) Guardamos los datos del partido/fases (Lo que lee el Scoreboard)
+            datos_guardados = guardar_memoria(RESULTADOS_REALES_DINAMICO)
+            
+            # B) Calculamos el ranking y guardamos la 'foto' (Para los diffs +/-)
+            historial_guardado = False
             client = get_client()
-            datos = client.open(NOMBRE_HOJA_GOOGLE).sheet1.get_all_records()
-            if datos:
+            datos_usuarios = client.open(NOMBRE_HOJA_GOOGLE).sheet1.get_all_records()
+            if datos_usuarios:
                 tabla = []
-                for u in datos:
+                for u in datos_usuarios:
                     pts = calcular_puntaje_participante(u, RESULTADOS_REALES_DINAMICO)
-                    fila = {
-                        "Participante": u["Participante"],
-                        "TOTAL": pts["TOTAL"],
-                        "Partidos": pts["Partidos"],
-                        "Grupos": pts["Grupos"],
-                        "Octavos": pts["Octavos"],
-                        "Cuartos": pts["Cuartos"],
-                        "Semifinales": pts["Semifinales"],
-                        "3er Puesto": pts["Tercer Puesto"],
-                        "Final/Camp": pts["Final/Campeon"]
-                    }
-                    tabla.append(fila)
+                    tabla.append({"Participante": u["Participante"], "TOTAL": pts["TOTAL"], "Grupos": pts["Grupos"], "Sort": pts["Octavos"]+pts["Cuartos"]+pts["Final/Campeon"]})
                 
-                df = pd.DataFrame(tabla)
-                df['Playoffs_Desempate'] = df['Octavos'] + df['Cuartos'] + df['Semifinales'] + df['3er Puesto'] + df['Final/Camp']
+                # Ordenamos
+                df = pd.DataFrame(tabla).sort_values(by=["TOTAL", "Grupos", "Sort"], ascending=False).reset_index(drop=True)
                 
-                df = df.sort_values(
-                    by=["TOTAL", "Grupos", "Playoffs_Desempate"], 
-                    ascending=[False, False, False]
-                ).drop(columns=['Playoffs_Desempate']).reset_index(drop=True)
+                # Creamos diccionario {Participante: Posicion}
+                ranking_dict = {}
+                for idx, row in df.iterrows():
+                    ranking_dict[row['Participante']] = idx + 1
                 
-                df.index += 1
-                
-                st.success("✅ Cálculo de Prueba Realizado")
-                # AHORA LA TABLA ESTÁ FUERA DE 'col1', OCUPANDO TODO EL ANCHO
-                st.dataframe(
-                    df, 
-                    use_container_width=True,
-                    column_config={
-                        "TOTAL": st.column_config.NumberColumn("🏆 TOTAL", format="%d"),
-                        "Partidos": st.column_config.NumberColumn("Partidos", format="%d"),
-                        "Grupos": st.column_config.NumberColumn("Grupos", format="%d"),
-                        "Octavos": st.column_config.NumberColumn("8vos", format="%d"),
-                        "Cuartos": st.column_config.NumberColumn("4tos", format="%d"),
-                        "Semifinales": st.column_config.NumberColumn("Semis", format="%d"),
-                        "3er Puesto": st.column_config.NumberColumn("3ro", format="%d"),
-                        "Final/Camp": st.column_config.NumberColumn("Final", format="%d")
-                    }
-                )
+                # Guardamos en la hoja Ranking_Anterior
+                historial_guardado = guardar_cierre_dia(ranking_dict)
 
-    if save_clicked:
-        with st.spinner("Guardando configuración..."):
-            if guardar_memoria(RESULTADOS_REALES_DINAMICO):
-                st.success("✅ Resultados guardados. Si recargas la página, seguirán aquí.")
-                st.rerun() 
+            if datos_guardados and historial_guardado:
+                st.success("✅ Resultados guardados y Ranking actualizado correctamente.")
+                st.rerun()
+            else:
+                st.error("Hubo un error al guardar algunos datos.")
 
-    if reset_clicked:
-        if resetear_memoria():
-            st.warning("⚠️ Se han borrado todos los resultados cargados.")
-            st.rerun()
+    # 3. BOTÓN RESET
+    if c3.button("🗑️ RESETEAR", type="secondary", use_container_width=True):
+        if resetear_memoria(): st.warning("⚠️ Borrado."); st.rerun()
