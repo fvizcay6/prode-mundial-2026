@@ -29,7 +29,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. CONSTANTES Y DEFINICIONES
+# 2. CONSTANTES
 # ==========================================
 NOMBRE_HOJA_GOOGLE = "DB_Prode_2026"
 
@@ -45,7 +45,6 @@ def limpiar_prediccion_fase(datos_usuario, fase):
     input_str = input_str.strip()
     if not input_str:
         return []
-    # Divide por coma y limpia espacios
     return [x.strip() for x in input_str.split(",") if x.strip()]
 
 def calcular_puntaje_participante(datos_usuario, reales):
@@ -68,6 +67,7 @@ def calcular_puntaje_participante(datos_usuario, reales):
     pts_grupos = 0
     if "GRUPOS" in reales:
         for grupo, data_real in reales["GRUPOS"].items():
+            # Verificamos que existan las claves antes de acceder
             if data_real.get("1", "-") != "-" and data_real.get("2", "-") != "-" and data_real.get("3", "-") != "-":
                 
                 real_top3 = [data_real["1"], data_real["2"], data_real["3"]]
@@ -117,7 +117,8 @@ def calcular_puntaje_participante(datos_usuario, reales):
         for eq in u_semis:
             if eq in reales["SEMIS"]: 
                 pts_semis_base += 25
-                # Regla 3er puesto por descarte
+                
+                # Regla 3er puesto por descarte (si no es campeón ni subcampeón)
                 campeon_r = reales.get("CAMPEON", "-")
                 sub_r = reales.get("SUBCAMPEON", "-")
                 if eq != campeon_r and eq != sub_r and campeon_r != "-":
@@ -151,24 +152,54 @@ def calcular_puntaje_participante(datos_usuario, reales):
     return desglose
 
 # ==========================================
-# 4. CONEXIÓN A DATOS
+# 4. CONEXIÓN A DATOS (LECTURA)
 # ==========================================
-def obtener_datos():
+def obtener_datos_participantes():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
         contenido_json_texto = st.secrets["google_json"]["contenido_archivo"]
         creds_dict = json.loads(contenido_json_texto, strict=False)
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
+        # Hoja 1: Predicciones de los usuarios
         sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
         return sheet.get_all_records()
     except Exception as e:
-        st.error(f"❌ ERROR: No se pudo conectar a Google Sheets. ({e})")
+        st.error(f"❌ ERROR: No se pudo conectar a la DB de participantes. ({e})")
         return None
 
-@st.cache_data(ttl=600) # Cache de 10 minutos
+def obtener_resultados_oficiales_admin():
+    """
+    Lee los resultados oficiales guardados por el Admin en la hoja 'Resultados_Admin'
+    """
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    try:
+        contenido_json_texto = st.secrets["google_json"]["contenido_archivo"]
+        creds_dict = json.loads(contenido_json_texto, strict=False)
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        client = gspread.authorize(creds)
+        
+        try:
+            # Abrir la pestaña específica donde el admin guardó el JSON
+            sheet = client.open(NOMBRE_HOJA_GOOGLE).worksheet("Resultados_Admin")
+            # Leemos la celda A1 que contiene todo el JSON
+            json_texto = sheet.acell('A1').value
+            
+            if json_texto:
+                return json.loads(json_texto)
+            else:
+                return None
+        except gspread.exceptions.WorksheetNotFound:
+            st.warning("⚠️ Aún no se ha creado la hoja 'Resultados_Admin'. El Admin debe guardar los resultados primero.")
+            return None
+            
+    except Exception as e:
+        st.error(f"❌ Error al leer resultados oficiales: {e}")
+        return None
+
+@st.cache_data(ttl=600) # Cache de 10 minutos para no saturar la API
 def generar_ranking(resultados_reales_dict):
-    datos_usuarios = obtener_datos()
+    datos_usuarios = obtener_datos_participantes()
     
     if not datos_usuarios:
         return pd.DataFrame(), None
@@ -200,7 +231,7 @@ def generar_ranking(resultados_reales_dict):
         ).drop(columns=['Playoffs_Desempate']).reset_index(drop=True)
         df.index += 1
     
-    # Timestamp de actualización
+    # Fecha de actualización
     ahora_arg = datetime.datetime.now(pytz.timezone('America/Argentina/Buenos_Aires'))
     fecha_act = ahora_arg.strftime("%d/%m/%Y %H:%M")
     
@@ -210,19 +241,23 @@ def generar_ranking(resultados_reales_dict):
 # 5. APP PRINCIPAL
 # ==========================================
 
-# ⚠️ IMPORTANTE: Aquí debes definir los resultados reales que el Admin cargó.
-# Como el scoreboard es una app separada, por ahora definimos un diccionario base.
-# Si quieres que se actualice solo, deberás crear una hoja "Resultados" en Google Sheets
-# y leerla aquí. Por ahora, para evitar errores, usamos una estructura vacía o fija.
-
-RESULTADOS_REALES_ACTUALES = { 
-    "PARTIDOS": {}, "GRUPOS": {}, "OCTAVOS": [], "CUARTOS": [], 
-    "SEMIS": [], "TERCERO_EQUIPOS": [], "TERCERO_GANADOR": "-", 
-    "FINALISTAS": [], "CAMPEON": "-", "SUBCAMPEON": "-"
-}
-
 st.title("🏆 RANKING MUNDIAL 2026")
 
+# 1. Intentamos cargar los resultados oficiales desde la nube
+resultados_nube = obtener_resultados_oficiales_admin()
+
+if resultados_nube:
+    RESULTADOS_REALES_ACTUALES = resultados_nube
+else:
+    # Si falla o está vacío, usamos estructura vacía
+    st.info("ℹ️ Esperando carga de primeros resultados oficiales por parte del Administrador...")
+    RESULTADOS_REALES_ACTUALES = { 
+        "PARTIDOS": {}, "GRUPOS": {}, "OCTAVOS": [], "CUARTOS": [], 
+        "SEMIS": [], "TERCERO_EQUIPOS": [], "TERCERO_GANADOR": "-", 
+        "FINALISTAS": [], "CAMPEON": "-", "SUBCAMPEON": "-"
+    }
+
+# 2. Generamos el ranking con esos datos
 ranking_df, fecha = generar_ranking(RESULTADOS_REALES_ACTUALES)
 
 if not ranking_df.empty:
@@ -235,12 +270,12 @@ if not ranking_df.empty:
             st.rerun()
 
     # Mostrar Podio
-    if len(ranking_df) >= 3:
+    if len(ranking_df) >= 3 and ranking_df.iloc[0]['TOTAL'] > 0:
         c1, c2, c3 = st.columns(3)
         c2.metric("🥇 1er Lugar", f"{ranking_df.iloc[0]['Participante']}", f"{ranking_df.iloc[0]['TOTAL']} pts")
         c1.metric("🥈 2do Lugar", f"{ranking_df.iloc[1]['Participante']}", f"{ranking_df.iloc[1]['TOTAL']} pts")
         c3.metric("🥉 3er Lugar", f"{ranking_df.iloc[2]['Participante']}", f"{ranking_df.iloc[2]['TOTAL']} pts")
-    elif not ranking_df.empty:
+    elif not ranking_df.empty and ranking_df.iloc[0]['TOTAL'] > 0:
         st.metric("🥇 Líder", f"{ranking_df.iloc[0]['Participante']}", f"{ranking_df.iloc[0]['TOTAL']} pts")
 
     st.markdown("---")
