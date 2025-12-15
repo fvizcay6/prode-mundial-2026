@@ -21,10 +21,13 @@ st.markdown("""
         -webkit-text-fill-color: transparent;
         text-transform: uppercase;
         font-size: 3em;
+        text-align: center;
     }
     div[data-testid="stMetricValue"] {
         font-size: 1.5rem;
     }
+    /* Ajuste para centrar la tabla */
+    .stDataFrame { width: 100%; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -34,17 +37,13 @@ st.markdown("""
 NOMBRE_HOJA_GOOGLE = "DB_Prode_2026"
 
 # ==========================================
-# 3. MOTOR DE CÁLCULO (Copiado de Admin)
+# 3. MOTOR DE CÁLCULO
 # ==========================================
 
 def limpiar_prediccion_fase(datos_usuario, fase):
-    """
-    Limpia la predicción de fases finales para evitar errores con celdas vacías.
-    """
     input_str = datos_usuario.get(fase, "")
     input_str = input_str.strip()
-    if not input_str:
-        return []
+    if not input_str: return []
     return [x.strip() for x in input_str.split(",") if x.strip()]
 
 def calcular_puntaje_participante(datos_usuario, reales):
@@ -57,8 +56,7 @@ def calcular_puntaje_participante(datos_usuario, reales):
     if "PARTIDOS" in reales:
         for key, resultado_real in reales["PARTIDOS"].items():
             if resultado_real != "-":
-                pronostico = datos_usuario.get(key, "-")
-                if pronostico == resultado_real:
+                if datos_usuario.get(key, "-") == resultado_real:
                     pts_partidos += 1
     puntos += pts_partidos
     desglose['Partidos'] = pts_partidos
@@ -67,92 +65,58 @@ def calcular_puntaje_participante(datos_usuario, reales):
     pts_grupos = 0
     if "GRUPOS" in reales:
         for grupo, data_real in reales["GRUPOS"].items():
-            # Verificamos que existan las claves antes de acceder
             if data_real.get("1", "-") != "-" and data_real.get("2", "-") != "-" and data_real.get("3", "-") != "-":
-                
                 real_top3 = [data_real["1"], data_real["2"], data_real["3"]]
-                puntos_reales = {
-                    data_real["1"]: data_real.get("pts_1", 0),
-                    data_real["2"]: data_real.get("pts_2", 0),
-                    data_real["3"]: data_real.get("pts_3", 0),
-                }
-                
+                pts_reales = {data_real["1"]: data_real.get("pts_1", 0), data_real["2"]: data_real.get("pts_2", 0), data_real["3"]: data_real.get("pts_3", 0)}
                 for i in posiciones:
                     campo_usuario = f"{grupo}_{i}"
                     u_equipo = datos_usuario.get(campo_usuario)
-                    r_equipo_en_posicion = data_real[str(i)]
-                    
+                    r_equipo = data_real[str(i)]
                     if u_equipo in real_top3:
                         pts_grupos += 10 
-                        if u_equipo in puntos_reales:
-                            pts_grupos += puntos_reales[u_equipo]
-                    
-                    if u_equipo == r_equipo_en_posicion:
-                        pts_grupos += 5
+                        if u_equipo in pts_reales: pts_grupos += pts_reales[u_equipo]
+                    if u_equipo == r_equipo: pts_grupos += 5
     puntos += pts_grupos
     desglose['Grupos'] = pts_grupos
     
     # --- 3. FASES FINALES ---
-    pts_octavos = 0
-    pts_cuartos = 0
-    pts_semis_base = 0 
-    pts_tercer_puesto = 0 
-    pts_final_campeon = 0 
+    pts_oct = 0; pts_cua = 0; pts_sem = 0; pts_ter = 0; pts_fin = 0
     
-    # Octavos
-    u_octavos = limpiar_prediccion_fase(datos_usuario, "Octavos")
+    u_oct = limpiar_prediccion_fase(datos_usuario, "Octavos")
     if "OCTAVOS" in reales:
-        for eq in u_octavos:
-            if eq in reales["OCTAVOS"]: pts_octavos += 15
+        for eq in u_oct: 
+            if eq in reales["OCTAVOS"]: pts_oct += 15
         
-    # Cuartos
-    u_cuartos = limpiar_prediccion_fase(datos_usuario, "Cuartos")
+    u_cua = limpiar_prediccion_fase(datos_usuario, "Cuartos")
     if "CUARTOS" in reales:
-        for eq in u_cuartos:
-            if eq in reales["CUARTOS"]: pts_cuartos += 20
+        for eq in u_cua: 
+            if eq in reales["CUARTOS"]: pts_cua += 20
 
-    # Semis + Jugar 3er Puesto
-    u_semis = limpiar_prediccion_fase(datos_usuario, "Semis")
+    u_sem = limpiar_prediccion_fase(datos_usuario, "Semis")
     if "SEMIS" in reales:
-        for eq in u_semis:
+        for eq in u_sem:
             if eq in reales["SEMIS"]: 
-                pts_semis_base += 25
+                pts_sem += 25
+                camp = reales.get("CAMPEON","-"); sub = reales.get("SUBCAMPEON","-")
+                if eq != camp and eq != sub and camp != "-": pts_ter += 30
                 
-                # Regla 3er puesto por descarte (si no es campeón ni subcampeón)
-                campeon_r = reales.get("CAMPEON", "-")
-                sub_r = reales.get("SUBCAMPEON", "-")
-                if eq != campeon_r and eq != sub_r and campeon_r != "-":
-                    pts_tercer_puesto += 30 
-                
-    # Ganador 3er puesto
-    u_tercero = datos_usuario.get("Tercero")
-    if "TERCERO_GANADOR" in reales and u_tercero == reales["TERCERO_GANADOR"]: 
-        pts_tercer_puesto += 35 
+    u_ter = datos_usuario.get("Tercero")
+    if "TERCERO_GANADOR" in reales and u_ter == reales["TERCERO_GANADOR"]: pts_ter += 35
     
-    # Finalistas y Campeón
-    u_campeon = datos_usuario.get("Campeon")
-    u_sub = datos_usuario.get("Subcampeon")
-    
+    u_cam = datos_usuario.get("Campeon"); u_sub = datos_usuario.get("Subcampeon")
     if "FINALISTAS" in reales:
-        if u_campeon in reales["FINALISTAS"]: pts_final_campeon += 40
-        if u_sub in reales["FINALISTAS"]: pts_final_campeon += 40
+        if u_cam in reales["FINALISTAS"]: pts_fin += 40
+        if u_sub in reales["FINALISTAS"]: pts_fin += 40
+    if "CAMPEON" in reales and u_cam == reales["CAMPEON"]: pts_fin += 50
     
-    if "CAMPEON" in reales and u_campeon == reales["CAMPEON"]: pts_final_campeon += 50
+    puntos += pts_oct + pts_cua + pts_sem + pts_ter + pts_fin
     
-    # Totales
-    puntos += pts_octavos + pts_cuartos + pts_semis_base + pts_tercer_puesto + pts_final_campeon
-    
-    desglose['Octavos'] = pts_octavos
-    desglose['Cuartos'] = pts_cuartos
-    desglose['Semifinales'] = pts_semis_base
-    desglose['Tercer Puesto'] = pts_tercer_puesto
-    desglose['Final/Campeon'] = pts_final_campeon
-    desglose['TOTAL'] = puntos
-    
+    desglose['Octavos']=pts_oct; desglose['Cuartos']=pts_cua; desglose['Semifinales']=pts_sem
+    desglose['Tercer Puesto']=pts_ter; desglose['Final/Campeon']=pts_fin; desglose['TOTAL']=puntos
     return desglose
 
 # ==========================================
-# 4. CONEXIÓN A DATOS (LECTURA)
+# 4. CONEXIÓN A DATOS
 # ==========================================
 def obtener_datos_participantes():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -161,43 +125,45 @@ def obtener_datos_participantes():
         creds_dict = json.loads(contenido_json_texto, strict=False)
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
-        # Hoja 1: Predicciones de los usuarios
-        sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
-        return sheet.get_all_records()
+        return client.open(NOMBRE_HOJA_GOOGLE).sheet1.get_all_records()
     except Exception as e:
-        st.error(f"❌ ERROR: No se pudo conectar a la DB de participantes. ({e})")
         return None
 
 def obtener_resultados_oficiales_admin():
-    """
-    Lee los resultados oficiales guardados por el Admin en la hoja 'Resultados_Admin'
-    """
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
         contenido_json_texto = st.secrets["google_json"]["contenido_archivo"]
         creds_dict = json.loads(contenido_json_texto, strict=False)
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
-        
         try:
-            # Abrir la pestaña específica donde el admin guardó el JSON
             sheet = client.open(NOMBRE_HOJA_GOOGLE).worksheet("Resultados_Admin")
-            # Leemos la celda A1 que contiene todo el JSON
             json_texto = sheet.acell('A1').value
-            
-            if json_texto:
-                return json.loads(json_texto)
-            else:
-                return None
-        except gspread.exceptions.WorksheetNotFound:
-            st.warning("⚠️ Aún no se ha creado la hoja 'Resultados_Admin'. El Admin debe guardar los resultados primero.")
-            return None
-            
-    except Exception as e:
-        st.error(f"❌ Error al leer resultados oficiales: {e}")
-        return None
+            return json.loads(json_texto) if json_texto else None
+        except: return None
+    except: return None
 
-@st.cache_data(ttl=600) # Cache de 10 minutos para no saturar la API
+# ==========================================
+# 5. ESTILOS Y FORMATO
+# ==========================================
+
+# Función para aplicar colores a la columna 'Participante'
+def color_trend(val):
+    if "(+" in val:
+        return 'color: #00FF87; font-weight: bold;' # Verde Negrita
+    elif "(-" in val:
+        return 'color: #FF4B4B; font-weight: bold;' # Rojo Negrita
+    else:
+        return 'font-weight: bold;' # Negrita Normal
+
+def asignar_medalla(posicion):
+    if posicion == 1: return "🥇"
+    if posicion == 2: return "🥈"
+    if posicion == 3: return "🥉"
+    if 4 <= posicion <= 6: return "📜"
+    return str(posicion)
+
+@st.cache_data(ttl=600)
 def generar_ranking(resultados_reales_dict):
     datos_usuarios = obtener_datos_participantes()
     
@@ -211,6 +177,7 @@ def generar_ranking(resultados_reales_dict):
         fila = {
             "Participante": usuario["Participante"],
             "TOTAL": puntajes["TOTAL"],
+            "Partidos": puntajes["Partidos"], # Agregada columna Partidos
             "Grupos": puntajes["Grupos"],
             "Octavos": puntajes["Octavos"],
             "Cuartos": puntajes["Cuartos"],
@@ -222,79 +189,100 @@ def generar_ranking(resultados_reales_dict):
         
     df = pd.DataFrame(tabla)
     
-    # Desempate
     if not df.empty:
+        # 1. ORDENAR
         df['Playoffs_Desempate'] = df['Octavos'] + df['Cuartos'] + df['Semifinales'] + df['3er Puesto'] + df['Final/Campeon']
-        df = df.sort_values(
-            by=["TOTAL", "Grupos", "Playoffs_Desempate"], 
-            ascending=[False, False, False]
-        ).drop(columns=['Playoffs_Desempate']).reset_index(drop=True)
-        df.index += 1
+        df = df.sort_values(by=["TOTAL", "Grupos", "Playoffs_Desempate"], ascending=[False, False, False]).drop(columns=['Playoffs_Desempate']).reset_index(drop=True)
+        
+        # 2. CALCULAR TENDENCIA (Simulación por falta de histórico)
+        # Nota: Aquí deberíamos leer el ranking de ayer. Como no existe, asumimos que 
+        # Ranking Anterior = Ranking Actual.
+        # Para probar colores, puedes descomentar la linea de abajo para "simular" movimientos aleatorios
+        # import random; df['Prev_Rank'] = [i + 1 + random.randint(-1, 1) for i in df.index]
+        
+        df['Rank_Actual'] = df.index + 1
+        df['Prev_Rank'] = df['Rank_Actual'] # Por ahora, neutro.
+        
+        df['Diff'] = df['Prev_Rank'] - df['Rank_Actual'] # Positivo es que mejoró (estaba 5, ahora 3 -> +2)
+        
+        # 3. FORMATO STRING PARTICIPANTE
+        def format_name(row):
+            nombre = row['Participante']
+            diff = row['Diff']
+            if diff > 0:
+                return f"{nombre} (+{diff})"
+            elif diff < 0:
+                return f"{nombre} ({diff})"
+            else:
+                return nombre
+                
+        df['Participante'] = df.apply(format_name, axis=1)
+        
+        # 4. MEDALLAS
+        df['Pos'] = df['Rank_Actual'].apply(asignar_medalla)
+        
+        # 5. REORDENAR COLUMNAS PARA VISUALIZACIÓN
+        cols = ['Pos', 'Participante', 'TOTAL', 'Partidos', 'Grupos', 'Octavos', 'Cuartos', 'Semifinales', '3er Puesto', 'Final/Campeon']
+        df = df[cols]
     
-    # Fecha de actualización
     ahora_arg = datetime.datetime.now(pytz.timezone('America/Argentina/Buenos_Aires'))
     fecha_act = ahora_arg.strftime("%d/%m/%Y %H:%M")
     
     return df, fecha_act
 
 # ==========================================
-# 5. APP PRINCIPAL
+# 6. APP PRINCIPAL
 # ==========================================
 
 st.title("🏆 RANKING MUNDIAL 2026")
 
-# 1. Intentamos cargar los resultados oficiales desde la nube
 resultados_nube = obtener_resultados_oficiales_admin()
+RESULTADOS_REALES_ACTUALES = resultados_nube if resultados_nube else { "PARTIDOS": {}, "GRUPOS": {}, "OCTAVOS": [], "CUARTOS": [], "SEMIS": [], "TERCERO_GANADOR": "-", "FINALISTAS": [], "CAMPEON": "-", "SUBCAMPEON": "-" }
 
-if resultados_nube:
-    RESULTADOS_REALES_ACTUALES = resultados_nube
-else:
-    # Si falla o está vacío, usamos estructura vacía
-    st.info("ℹ️ Esperando carga de primeros resultados oficiales por parte del Administrador...")
-    RESULTADOS_REALES_ACTUALES = { 
-        "PARTIDOS": {}, "GRUPOS": {}, "OCTAVOS": [], "CUARTOS": [], 
-        "SEMIS": [], "TERCERO_EQUIPOS": [], "TERCERO_GANADOR": "-", 
-        "FINALISTAS": [], "CAMPEON": "-", "SUBCAMPEON": "-"
-    }
-
-# 2. Generamos el ranking con esos datos
 ranking_df, fecha = generar_ranking(RESULTADOS_REALES_ACTUALES)
 
 if not ranking_df.empty:
     col1, col2 = st.columns([3, 1])
     with col1:
-        st.success(f"✅ Tabla Actualizada: {fecha} (Hora ARG)")
+        st.success(f"✅ Última Actualización: {fecha} (Hora ARG)")
     with col2:
-        if st.button("🔄 Refrescar"):
+        if st.button("🔄 Refrescar Tabla"):
             st.cache_data.clear()
             st.rerun()
 
-    # Mostrar Podio
+    # PODIO DESTACADO
     if len(ranking_df) >= 3 and ranking_df.iloc[0]['TOTAL'] > 0:
         c1, c2, c3 = st.columns(3)
-        c2.metric("🥇 1er Lugar", f"{ranking_df.iloc[0]['Participante']}", f"{ranking_df.iloc[0]['TOTAL']} pts")
-        c1.metric("🥈 2do Lugar", f"{ranking_df.iloc[1]['Participante']}", f"{ranking_df.iloc[1]['TOTAL']} pts")
-        c3.metric("🥉 3er Lugar", f"{ranking_df.iloc[2]['Participante']}", f"{ranking_df.iloc[2]['TOTAL']} pts")
-    elif not ranking_df.empty and ranking_df.iloc[0]['TOTAL'] > 0:
-        st.metric("🥇 Líder", f"{ranking_df.iloc[0]['Participante']}", f"{ranking_df.iloc[0]['TOTAL']} pts")
+        # El 2do a la izquierda, 1ro al centro, 3ro a la derecha (estilo podio)
+        with c2: st.metric("🥇 LÍDER", ranking_df.iloc[0]['Participante'].split('(')[0], f"{ranking_df.iloc[0]['TOTAL']} pts")
+        with c1: st.metric("🥈 SEGUNDO", ranking_df.iloc[1]['Participante'].split('(')[0], f"{ranking_df.iloc[1]['TOTAL']} pts")
+        with c3: st.metric("🥉 TERCERO", ranking_df.iloc[2]['Participante'].split('(')[0], f"{ranking_df.iloc[2]['TOTAL']} pts")
 
     st.markdown("---")
     
-    # Mostrar Tabla Completa
+    # APLICAR ESTILOS DE PANDAS
+    # Esto colorea la columna 'Participante' basado en el texto (+/-)
+    styled_df = ranking_df.style.applymap(color_trend, subset=['Participante'])
+
+    # MOSTRAR TABLA
     st.dataframe(
-        ranking_df,
+        styled_df,
         use_container_width=True,
-        height=600,
+        height=800,
         column_config={
-            "TOTAL": st.column_config.NumberColumn("🏆 TOTAL", format="%d", width="medium"),
+            "Pos": st.column_config.Column("Pos", width="small"),
+            "Participante": st.column_config.Column("Participante", width="large"),
+            "TOTAL": st.column_config.NumberColumn("🏆 TOTAL", format="%d"),
+            "Partidos": st.column_config.NumberColumn("Partidos", format="%d"),
             "Grupos": st.column_config.NumberColumn("Grupos", format="%d"),
-            "Octavos": st.column_config.NumberColumn("Octavos", format="%d"),
-            "Cuartos": st.column_config.NumberColumn("Cuartos", format="%d"),
+            "Octavos": st.column_config.NumberColumn("8vos", format="%d"),
+            "Cuartos": st.column_config.NumberColumn("4tos", format="%d"),
             "Semifinales": st.column_config.NumberColumn("Semis", format="%d"),
-            "3er Puesto": st.column_config.NumberColumn("3er Puesto", format="%d"),
-            "Final/Campeon": st.column_config.NumberColumn("Final/Camp.", format="%d"),
-        }
+            "3er Puesto": st.column_config.NumberColumn("3ro", format="%d"),
+            "Final/Campeon": st.column_config.NumberColumn("Final", format="%d"),
+        },
+        hide_index=True # Ocultamos el índice numérico feo de pandas
     )
 
 else:
-    st.warning("⚠️ No hay participantes registrados o no se pudo conectar a la base de datos.")
+    st.warning("⚠️ Esperando datos...")
