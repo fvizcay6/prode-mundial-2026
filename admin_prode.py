@@ -46,7 +46,7 @@ def check_password():
         # Contraseña correcta
         return True
 
-# --- BLOQUE PRINCIPAL (SOLO SE EJECUTA SI ESTÁ LOGUEADO) ---
+# --- BLOQUE PRINCIPAL (SOLO SI LOGUEADO) ---
 if check_password():
 
     NOMBRE_HOJA_GOOGLE = "DB_Prode_2026"
@@ -90,18 +90,14 @@ if check_password():
         return gspread.authorize(creds)
 
     def cargar_memoria():
-        """Lee la hoja de Google Sheets para recuperar el estado anterior."""
         try:
             client = get_client()
             sheet = client.open(NOMBRE_HOJA_GOOGLE).worksheet("Resultados_Admin")
             val = sheet.acell('A1').value
-            if val:
-                return json.loads(val)
-        except Exception:
-            return None
+            if val: return json.loads(val)
+        except Exception: return None
 
     def guardar_memoria(datos):
-        """Guarda el estado actual en Google Sheets."""
         try:
             client = get_client()
             try:
@@ -109,7 +105,6 @@ if check_password():
             except gspread.exceptions.WorksheetNotFound:
                 st.error("❌ No existe la hoja 'Resultados_Admin'. Créala en Google Sheets.")
                 return False
-            
             sheet.update_acell('A1', json.dumps(datos))
             return True
         except Exception as e:
@@ -117,7 +112,6 @@ if check_password():
             return False
 
     def resetear_memoria():
-        """Borra todo en la nube."""
         vacio = { 
             "PARTIDOS": {}, "GRUPOS": {}, "OCTAVOS": [], "CUARTOS": [], 
             "SEMIS": [], "TERCERO_EQUIPOS": [], "TERCERO_GANADOR": "-", 
@@ -127,7 +121,6 @@ if check_password():
 
     # --- CARGAR ESTADO AL INICIO ---
     ESTADO_GUARDADO = cargar_memoria()
-
     if ESTADO_GUARDADO is None:
         ESTADO_GUARDADO = { "PARTIDOS": {}, "GRUPOS": {}, "OCTAVOS": [], "CUARTOS": [], "SEMIS": [], "TERCERO_GANADOR": "-", "FINALISTAS": [], "CAMPEON": "-", "SUBCAMPEON": "-"}
 
@@ -173,19 +166,16 @@ if check_password():
         # 3. Playoffs
         pts_oct = 0; pts_cua = 0; pts_sem = 0; pts_ter = 0; pts_fin = 0
         
-        # Octavos
         u_oct = limpiar_prediccion_fase(datos_usuario, "Octavos")
         if "OCTAVOS" in reales:
             for eq in u_oct: 
                 if eq in reales["OCTAVOS"]: pts_oct += 15
         
-        # Cuartos
         u_cua = limpiar_prediccion_fase(datos_usuario, "Cuartos")
         if "CUARTOS" in reales:
             for eq in u_cua: 
                 if eq in reales["CUARTOS"]: pts_cua += 20
                 
-        # Semis
         u_sem = limpiar_prediccion_fase(datos_usuario, "Semis")
         if "SEMIS" in reales:
             for eq in u_sem:
@@ -194,11 +184,9 @@ if check_password():
                     camp = reales.get("CAMPEON","-"); sub = reales.get("SUBCAMPEON","-")
                     if eq != camp and eq != sub and camp != "-": pts_ter += 30
         
-        # 3er Puesto Ganador
         u_ter = datos_usuario.get("Tercero")
         if "TERCERO_GANADOR" in reales and u_ter == reales["TERCERO_GANADOR"]: pts_ter += 35
         
-        # Final y Campeon
         u_cam = datos_usuario.get("Campeon"); u_sub = datos_usuario.get("Subcampeon")
         if "FINALISTAS" in reales:
             if u_cam in reales["FINALISTAS"]: pts_fin += 40
@@ -227,8 +215,6 @@ if check_password():
 
     for nombre_grupo, equipos in GRUPOS.items():
         codigo = nombre_grupo.split(" ")[1]
-        
-        # Recuperamos lo guardado
         datos_grupo_saved = ESTADO_GUARDADO.get("GRUPOS", {}).get(nombre_grupo, {})
         
         with cols_pantalla[idx_col % 2]: 
@@ -237,32 +223,21 @@ if check_password():
                 for i, (idx_L, idx_V) in enumerate(FIXTURE_INDICES):
                     local, visita = equipos[idx_L], equipos[idx_V]
                     key_match = f"P_G{codigo}_{i+1}"
-                    
-                    # MEMORIA
                     val_saved = ESTADO_GUARDADO.get("PARTIDOS", {}).get(key_match, "-")
                     opts = ["-", "L", "E", "V"]
                     
-                    res = st.radio(
-                        label=f"{local} vs {visita}", 
-                        options=opts, 
-                        horizontal=True, 
-                        key=f"R_{key_match}", 
-                        index=get_index_option(opts, val_saved) 
-                    )
+                    res = st.radio(label=f"{local} vs {visita}", options=opts, horizontal=True, key=f"R_{key_match}", index=get_index_option(opts, val_saved))
                     partidos_reales[key_match] = res
                 
                 st.markdown("##### Clasificados")
-                # 1ro
                 idx_1 = get_index_option(["-"]+equipos, datos_grupo_saved.get("1", "-"))
                 p1 = st.selectbox("🥇 1º REAL", ["-"]+equipos, key=f"S1_{codigo}", index=idx_1)
                 pts1 = st.number_input("Pts 1º", 0, 9, value=datos_grupo_saved.get("pts_1", 0), key=f"N1_{codigo}")
                 
-                # 2do
                 idx_2 = get_index_option(["-"]+equipos, datos_grupo_saved.get("2", "-"))
                 p2 = st.selectbox("🥈 2º REAL", ["-"]+equipos, key=f"S2_{codigo}", index=idx_2)
                 pts2 = st.number_input("Pts 2º", 0, 9, value=datos_grupo_saved.get("pts_2", 0), key=f"N2_{codigo}")
                 
-                # 3ro
                 idx_3 = get_index_option(["-"]+equipos, datos_grupo_saved.get("3", "-"))
                 p3 = st.selectbox("🥉 3º REAL", ["-"]+equipos, key=f"S3_{codigo}", index=idx_3)
                 pts3 = st.number_input("Pts 3º", 0, 9, value=datos_grupo_saved.get("pts_3", 0), key=f"N3_{codigo}")
@@ -271,7 +246,6 @@ if check_password():
         idx_col += 1
 
     st.markdown("---")
-
     st.subheader("2. Carga de Fases Finales")
 
     saved_oct = ESTADO_GUARDADO.get("OCTAVOS", [])
@@ -314,24 +288,30 @@ if check_password():
     }
 
     # ==========================================
-    # 5. BOTONES DE ACCIÓN
+    # 5. BOTONES DE ACCIÓN (DISPOSICIÓN CORREGIDA)
     # ==========================================
 
     st.markdown("---")
     st.header("ACCIONES DE ADMINISTRADOR")
 
+    # Definimos las columnas SOLO para los botones
     col1, col2, col3 = st.columns(3)
 
-    with col1:
-        if st.button("🔄 SOLO CALCULAR (Ver Tabla)", use_container_width=True):
+    # Capturamos el evento del clic
+    calc_clicked = col1.button("🔄 SOLO CALCULAR (Ver Tabla)", use_container_width=True)
+    save_clicked = col2.button("💾 GUARDAR RESULTADOS (Mantener)", type="primary", use_container_width=True)
+    reset_clicked = col3.button("🗑️ RESETEAR TODO (Borrar)", type="secondary", use_container_width=True)
+
+    # --- LÓGICA FUERA DE LAS COLUMNAS (Para usar el ancho completo) ---
+
+    if calc_clicked:
+        with st.spinner("Calculando..."):
             client = get_client()
             datos = client.open(NOMBRE_HOJA_GOOGLE).sheet1.get_all_records()
             if datos:
                 tabla = []
                 for u in datos:
                     pts = calcular_puntaje_participante(u, RESULTADOS_REALES_DINAMICO)
-                    
-                    # --- AQUÍ ESTÁ EL CAMBIO SOLICITADO ---
                     fila = {
                         "Participante": u["Participante"],
                         "TOTAL": pts["TOTAL"],
@@ -344,23 +324,19 @@ if check_password():
                         "Final/Camp": pts["Final/Campeon"]
                     }
                     tabla.append(fila)
-                    # -------------------------------------
                 
-                # Crear DataFrame
                 df = pd.DataFrame(tabla)
-                
-                # Calcular desempate para ordenar (sin mostrarlo)
                 df['Playoffs_Desempate'] = df['Octavos'] + df['Cuartos'] + df['Semifinales'] + df['3er Puesto'] + df['Final/Camp']
                 
-                # Ordenar
                 df = df.sort_values(
                     by=["TOTAL", "Grupos", "Playoffs_Desempate"], 
                     ascending=[False, False, False]
                 ).drop(columns=['Playoffs_Desempate']).reset_index(drop=True)
                 
-                # Ajustar índice para que empiece en 1
                 df.index += 1
                 
+                st.success("✅ Cálculo de Prueba Realizado")
+                # AHORA LA TABLA ESTÁ FUERA DE 'col1', OCUPANDO TODO EL ANCHO
                 st.dataframe(
                     df, 
                     use_container_width=True,
@@ -376,15 +352,13 @@ if check_password():
                     }
                 )
 
-    with col2:
-        if st.button("💾 GUARDAR RESULTADOS (Mantener)", type="primary", use_container_width=True):
-            with st.spinner("Guardando configuración..."):
-                if guardar_memoria(RESULTADOS_REALES_DINAMICO):
-                    st.success("✅ Resultados guardados.")
-                    st.rerun() 
+    if save_clicked:
+        with st.spinner("Guardando configuración..."):
+            if guardar_memoria(RESULTADOS_REALES_DINAMICO):
+                st.success("✅ Resultados guardados. Si recargas la página, seguirán aquí.")
+                st.rerun() 
 
-    with col3:
-        if st.button("🗑️ RESETEAR TODO (Borrar)", type="secondary", use_container_width=True):
-            if resetear_memoria():
-                st.warning("⚠️ Se han borrado todos los resultados cargados.")
-                st.rerun()
+    if reset_clicked:
+        if resetear_memoria():
+            st.warning("⚠️ Se han borrado todos los resultados cargados.")
+            st.rerun()
