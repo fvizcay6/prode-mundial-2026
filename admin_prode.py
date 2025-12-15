@@ -18,7 +18,7 @@ def check_password():
         if st.session_state["username"] in st.secrets["passwords"] and \
            st.session_state["password"] == st.secrets["passwords"][st.session_state["username"]]:
             st.session_state["password_correct"] = True
-            # Borramos la contraseña de la memoria de sesión por seguridad
+            # Borramos la contraseña de la memoria por seguridad
             del st.session_state["password"]  
             del st.session_state["username"]
         else:
@@ -27,13 +27,14 @@ def check_password():
     if "password_correct" not in st.session_state:
         # Primera vez: mostramos los inputs
         st.markdown("### 🔒 Acceso Restringido")
+        st.caption("Por seguridad, debe iniciar sesión cada vez que abra la ventana.")
         st.text_input("Usuario", key="username")
         st.text_input("Contraseña", type="password", key="password")
         st.button("Ingresar", on_click=password_entered)
         return False
     
     elif not st.session_state["password_correct"]:
-        # Contraseña incorrecta: mostramos inputs + error
+        # Contraseña incorrecta
         st.markdown("### 🔒 Acceso Restringido")
         st.text_input("Usuario", key="username")
         st.text_input("Contraseña", type="password", key="password")
@@ -45,12 +46,8 @@ def check_password():
         # Contraseña correcta
         return True
 
-# --- BLOQUE PRINCIPAL DE SEGURIDAD ---
+# --- BLOQUE PRINCIPAL (SOLO SE EJECUTA SI ESTÁ LOGUEADO) ---
 if check_password():
-
-    # =========================================================
-    # ⬇️ AQUÍ COMIENZA TODA LA APP DE ADMIN (SOLO SI LOGUEADO)
-    # =========================================================
 
     NOMBRE_HOJA_GOOGLE = "DB_Prode_2026"
 
@@ -73,13 +70,12 @@ if check_password():
     FIXTURE_INDICES = [(0,1), (2,3), (0,2), (1,3), (0,3), (1,2)]
 
     st.title("⚽ Administrador de Resultados Reales")
-    st.caption("✅ Sesión Iniciada Correctamente")
+    st.caption("✅ Sesión Iniciada Correctamente | Cerrar la pestaña cerrará la sesión.")
     
-    # Botón de Logout
-    if st.button("cerrar sesión"):
+    if st.button("Cerrar Sesión"):
         del st.session_state["password_correct"]
         st.rerun()
-        
+
     st.header("👮‍♂️ PANEL DE CONTROL Y PUNTUACIÓN")
 
     # ==========================================
@@ -334,9 +330,51 @@ if check_password():
                 tabla = []
                 for u in datos:
                     pts = calcular_puntaje_participante(u, RESULTADOS_REALES_DINAMICO)
-                    tabla.append({"Participante": u["Participante"], "TOTAL": pts["TOTAL"]})
-                df = pd.DataFrame(tabla).sort_values("TOTAL", ascending=False)
-                st.dataframe(df.reset_index(drop=True), use_container_width=True)
+                    
+                    # --- AQUÍ ESTÁ EL CAMBIO SOLICITADO ---
+                    fila = {
+                        "Participante": u["Participante"],
+                        "TOTAL": pts["TOTAL"],
+                        "Partidos": pts["Partidos"],
+                        "Grupos": pts["Grupos"],
+                        "Octavos": pts["Octavos"],
+                        "Cuartos": pts["Cuartos"],
+                        "Semifinales": pts["Semifinales"],
+                        "3er Puesto": pts["Tercer Puesto"],
+                        "Final/Camp": pts["Final/Campeon"]
+                    }
+                    tabla.append(fila)
+                    # -------------------------------------
+                
+                # Crear DataFrame
+                df = pd.DataFrame(tabla)
+                
+                # Calcular desempate para ordenar (sin mostrarlo)
+                df['Playoffs_Desempate'] = df['Octavos'] + df['Cuartos'] + df['Semifinales'] + df['3er Puesto'] + df['Final/Camp']
+                
+                # Ordenar
+                df = df.sort_values(
+                    by=["TOTAL", "Grupos", "Playoffs_Desempate"], 
+                    ascending=[False, False, False]
+                ).drop(columns=['Playoffs_Desempate']).reset_index(drop=True)
+                
+                # Ajustar índice para que empiece en 1
+                df.index += 1
+                
+                st.dataframe(
+                    df, 
+                    use_container_width=True,
+                    column_config={
+                        "TOTAL": st.column_config.NumberColumn("🏆 TOTAL", format="%d"),
+                        "Partidos": st.column_config.NumberColumn("Partidos", format="%d"),
+                        "Grupos": st.column_config.NumberColumn("Grupos", format="%d"),
+                        "Octavos": st.column_config.NumberColumn("8vos", format="%d"),
+                        "Cuartos": st.column_config.NumberColumn("4tos", format="%d"),
+                        "Semifinales": st.column_config.NumberColumn("Semis", format="%d"),
+                        "3er Puesto": st.column_config.NumberColumn("3ro", format="%d"),
+                        "Final/Camp": st.column_config.NumberColumn("Final", format="%d")
+                    }
+                )
 
     with col2:
         if st.button("💾 GUARDAR RESULTADOS (Mantener)", type="primary", use_container_width=True):
