@@ -1,20 +1,22 @@
 import streamlit as st
-import pandas as pd
+import streamlit.components.v1 as components
+from datetime import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import os
 import json
-import datetime
-import pytz
 
 # ==========================================
-# 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS (CSS)
+# 1. CONFIGURACIÓN VISUAL
 # ==========================================
-st.set_page_config(page_title="Prode Mundial 2026", layout="wide", page_icon="⚽")
+st.set_page_config(page_title="Prode Mundial 2026", layout="wide", page_icon="🏆")
 
-# CSS PARA CORREGIR EL ERROR DE "TEXTO INVISIBLE" EN DESPLEGABLES
 st.markdown("""
     <style>
-    /* Forzar color negro en las opciones de los selectbox */
+    /* CORRECCIÓN VISUAL PARA DESPLEGABLES (TEXTO NEGRO) */
     div[data-baseweb="select"] > div {
         color: black !important;
     }
@@ -22,20 +24,67 @@ st.markdown("""
         color: black !important;
         background-color: white !important;
     }
-    /* Asegurar que el contenedor del menú tenga fondo blanco */
     ul[role="listbox"] {
         background-color: white !important;
     }
-    /* Estilo general de la app */
-    .stApp { background-color: #0e1117; color: #ffffff; }
-    h1 { color: #00FF87; }
-    h2, h3 { color: #CF00FF; }
+    
+    /* ESTILOS GENERALES DE LA APP */
+    .stApp { background-color: #000000; color: #ffffff; }
+    p, label, .stMarkdown, .stCaption, .stCheckbox, li { color: #ffffff !important; font-family: 'Helvetica Neue', sans-serif; }
+    h1, h2, h3 {
+        font-family: 'Arial Black', sans-serif;
+        background: -webkit-linear-gradient(45deg, #CF00FF, #00FF87);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-transform: uppercase;
+        margin-bottom: 0px;
+    }
+    div[role="radiogroup"] { justify-content: center; }
+    div[role="radiogroup"] label {
+        background-color: #1a1a1a; border: 1px solid #444;
+        padding: 4px 12px; border-radius: 4px; color: white;
+        font-size: 14px; margin-right: 4px; transition: all 0.3s;
+    }
+    div[role="radiogroup"] label:hover { border-color: #00FF87; background-color: #222; cursor: pointer; }
+    @media only screen and (max-width: 600px) {
+        h1 { font-size: 28px !important; }
+        .team-text { font-size: 11px !important; line-height: 1.2 !important; }
+        div[role="radiogroup"] label { padding: 2px 6px !important; font-size: 12px !important; }
+        .block-container { padding-left: 1rem; padding-right: 1rem; }
+    }
+    div.stButton > button {
+        background: linear-gradient(90deg, #00C853 0%, #B2FF59 100%);
+        color: black; font-weight: 800; border: none; padding: 15px 20px;
+        font-size: 18px; text-transform: uppercase; width: 100%; border-radius: 8px; margin-top: 20px;
+    }
+    .stTextInput input, .stNumberInput input { background-color: #222; color: white; border: 1px solid #555; border-radius: 5px; }
+    .stAlert { background-color: #222; color: white; border: 1px solid #555; }
+    strong { color: #00FF87; }
     </style>
 """, unsafe_allow_html=True)
 
+# BARRA LATERAL
+with st.sidebar:
+    if os.path.exists("logo.jpg"): st.image("logo.jpg", use_container_width=True)
+    elif os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
+    st.markdown("---")
+    st.markdown("### 🎵 AMBIENTACIÓN")
+    st.components.v1.iframe("https://www.youtube.com/embed/kyXRhggUmG8", height=150)
+
+# HEADER
+c_logo, c_tit = st.columns([1, 5])
+with c_logo:
+    if os.path.exists("logo.jpg"): st.image("logo.jpg", use_container_width=True)
+    elif os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
+with c_tit:
+    st.title("FIFA WORLD CUP 2026")
+    st.markdown("### OFFICIAL PREDICTION GAME")
+
 # ==========================================
-# 2. DEFINICIÓN DE EQUIPOS Y GRUPOS
+# 2. CONFIGURACIÓN DE DATOS
 # ==========================================
+NOMBRE_HOJA_GOOGLE = "DB_Prode_2026"
+
 GRUPOS = {
     "GRUPO A": ["🇲🇽 MEXICO", "🇿🇦 SUDAFRICA", "🇰🇷 COREA DEL SUR", "🌍 REP. EUR (DIN/MACE)"],
     "GRUPO B": ["🇨🇦 CANADA", "🌍 REP. EUR (ITA/BOS)", "🇶🇦 QATAR", "🇨🇭 SUIZA"],
@@ -50,209 +99,290 @@ GRUPOS = {
     "GRUPO K": ["🇵🇹 PORTUGAL", "🇯🇲 JAMAICA", "🇺🇿 UZBEKISTAN", "🇨🇴 COLOMBIA"],
     "GRUPO L": ["🏴󠁧󠁢󠁥󠁮󠁧󠁿 INGLATERRA", "🇭🇷 CROACIA", "🇬🇭 GHANA", "🇵🇦 PANAMA"],
 }
-
-# Lista completa de equipos ordenada para los desplegables de fases finales
 TODOS_LOS_EQUIPOS = sorted([eq for lista in GRUPOS.values() for eq in lista])
-
-# Índices para generar los partidos (fixture) dentro de cada grupo
-# (0 vs 1), (2 vs 3), (0 vs 2), etc.
 FIXTURE_INDICES = [(0,1), (2,3), (0,2), (1,3), (0,3), (1,2)]
 
 # ==========================================
-# 3. CONEXIÓN A GOOGLE SHEETS
+# 3. FUNCIONES DE CONEXIÓN Y VALIDACIÓN
 # ==========================================
+def enviar_correo_confirmacion(datos):
+    try:
+        email_origen = st.secrets["email_credentials"]["EMAIL_ORIGEN"]
+        password_app = st.secrets["email_credentials"]["PASSWORD_APP"]
+    except:
+        st.error("⚠️ Configuración: No se encontraron las credenciales de Email en Secrets.")
+        return False
+
+    destinatario = datos["Email"]
+    asunto = f"🏆 Ticket Oficial Mundial 2026 - {datos['Participante']}"
+    
+    html_partidos = ""
+    for nombre_grupo, equipos in GRUPOS.items():
+        codigo = nombre_grupo.split(" ")[1]
+        p1 = datos.get(f"{nombre_grupo}_1", "-")
+        p2 = datos.get(f"{nombre_grupo}_2", "-")
+        p3 = datos.get(f"{nombre_grupo}_3", "-")
+
+        html_partidos += f"<div style='margin-bottom: 10px; border-bottom: 1px solid #ccc; padding-bottom:5px;'><b>{nombre_grupo}:</b><br>"
+        for i, (idx_L, idx_V) in enumerate(FIXTURE_INDICES):
+            local, visita = equipos[idx_L], equipos[idx_V]
+            key = f"P_G{codigo}_{i+1}"
+            eleccion = datos.get(key, "-")
+            res_txt = "EMPATE" if eleccion == "E" else (local if eleccion == "L" else visita)
+            html_partidos += f"<span style='font-size: 12px;'>• {local} vs {visita} 👉 <b>{res_txt}</b></span><br>"
+        html_partidos += f"<br><span style='font-size: 12px; color: #444;'><i>Clasificados: 1. {p1} | 2. {p2} | 3. {p3}</i></span></div>"
+
+    lista_octavos = "".join([f"<div style='margin-left:10px;'>- {eq}</div>" for eq in datos['Octavos']])
+    lista_cuartos = "".join([f"<div style='margin-left:10px;'>- {eq}</div>" for eq in datos['Cuartos']])
+    lista_semis = "".join([f"<div style='margin-left:10px;'><b>- {eq}</b></div>" for eq in datos['Semis']])
+
+    cuerpo = f"""
+    <div style="font-family: sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; padding: 20px; background-color: #f9f9f9;">
+        <div style="text-align: center; background-color: #000; padding: 20px; color: white;">
+            <h1 style="color: #00FF87; margin:0;">COPA MUNDIAL 2026</h1>
+            <p>TICKET OFICIAL</p>
+        </div>
+        <div style="padding: 20px;">
+            <h3>Hola, {datos['Participante']}</h3>
+            <p>Tu participación ha sido registrada correctamente.</p>
+            <p><b>WhatsApp registrado:</b> {datos['WhatsApp']}</p>
+            <h3 style="color: #CF00FF;">🏆 TU PODIO FINAL</h3>
+            <div style="background-color: #eee; padding: 15px; border-radius: 8px; text-align: center; font-size: 18px;">
+                🥇 <b>1º: {datos['Campeon']}</b><br>
+                🥈 2º: {datos['Subcampeon']}<br>
+                🥉 3º: {datos['Tercero']}
+            </div>
+            <h3 style="color: #009688;">⚔️ FASES FINALES</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div style="background: #e0f2f1; padding: 10px; border-radius: 5px;"><b>SEMIFINALISTAS (4)</b><br>{lista_semis}</div>
+                <div style="background: #e0f2f1; padding: 10px; border-radius: 5px;"><b>CUARTOS DE FINAL (8)</b><br>{lista_cuartos}</div>
+            </div>
+            <div style="background: #f1f8e9; padding: 10px; border-radius: 5px; margin-top: 10px;">
+                <b>OCTAVOS DE FINAL (16)</b><br>{lista_octavos}
+            </div>
+            <h3 style="color: #000;">⚽ FASE DE GRUPOS</h3>
+            {html_partidos}
+        </div>
+    </div>
+    """
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = email_origen
+        msg['To'] = destinatario
+        msg['Subject'] = asunto
+        msg.attach(MIMEText(cuerpo, 'html'))
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(email_origen, password_app)
+        server.sendmail(email_origen, destinatario, msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        st.error(f"❌ Error enviando email: {e}")
+        return False
+
+def validar_duplicados_en_sheet(dni_input, email_input):
+    """Verifica si el DNI o Email ya existen en Google Sheets"""
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    try:
+        contenido_json_texto = st.secrets["google_json"]["contenido_archivo"]
+        creds_dict = json.loads(contenido_json_texto, strict=False)
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        client = gspread.authorize(creds)
+        sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
+        
+        lista_emails = sheet.col_values(3)
+        lista_dnis = sheet.col_values(4)
+        
+        if dni_input in lista_dnis:
+            return False, f"⚠️ El DNI {dni_input} ya está registrado en el torneo."
+        
+        if email_input in lista_emails:
+            return False, f"⚠️ El correo {email_input} ya fue utilizado."
+            
+        return True, "OK"
+    except Exception as e:
+        return False, f"Error validando base de datos: {e}"
+
 def guardar_en_google_sheets(datos):
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
-        # Leemos las credenciales desde st.secrets
         contenido_json_texto = st.secrets["google_json"]["contenido_archivo"]
         creds_dict = json.loads(contenido_json_texto, strict=False)
-        
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
+        sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
         
-        # Nombre de tu archivo en Google Drive
-        sheet = client.open("DB_Prode_2026").sheet1 
-        
-        # Convertimos el diccionario 'datos' en una lista ordenada para la fila
-        # IMPORTANTE: El orden aquí debe coincidir con tus columnas en Sheets
         fila = [
-            datos["Fecha"],
-            datos["Participante"],
-            datos["Email"],
-            datos["WhatsApp"],  # <--- NUEVO CAMPO
-            # ... Aquí se agregan dinámicamente el resto de las predicciones ...
+            datos["Fecha"], datos["Participante"], datos["Email"],
+            datos["DNI"], datos["Edad"], datos["Direccion"],
+            datos["WhatsApp"] # <--- AGREGADO: Columna G
         ]
+        for grupo in GRUPOS:
+            codigo = grupo.split(" ")[1]
+            for i in range(1, 7): fila.append(datos.get(f"P_G{codigo}_{i}", "-"))
+        for grupo in GRUPOS:
+            fila.extend([datos[f"{grupo}_1"], datos[f"{grupo}_2"], datos[f"{grupo}_3"]])
+        fila.append(", ".join(datos["Octavos"]))
+        fila.append(", ".join(datos["Cuartos"]))
+        fila.append(", ".join(datos["Semis"]))
+        fila.extend([datos["Campeon"], datos["Subcampeon"], datos["Tercero"]])
         
-        # Agregamos los valores de las predicciones al final de la fila
-        # Excluimos las llaves de metadatos ya agregadas
-        keys_meta = ["Fecha", "Participante", "Email", "WhatsApp"]
-        for k, v in datos.items():
-            if k not in keys_meta:
-                fila.append(str(v)) # Convertimos a string por seguridad
-                
         sheet.append_row(fila)
         return True
     except Exception as e:
-        st.error(f"Error al guardar en Google Sheets: {e}")
+        st.error(f"❌ Error conectando a Google Sheets: {e}")
         return False
 
 # ==========================================
-# 4. INTERFAZ DE USUARIO
+# 4. REGLAMENTO Y DATOS
 # ==========================================
+st.markdown("---")
+st.subheader("📜 REGLAMENTO SUPER PRODE USA-MEXICO-CANADA 2026")
 
-st.title("🏆 TU PRODE MUNDIAL 2026")
-st.markdown("¡Completa tus pronósticos y participa por la gloria!")
+reglamento_texto = """
+**1. Sistema de puntuación:**
+* **a)** Se sumará **10 Pts.** por cada equipo que Ud. acierte en la primera fase.
+* **b)** Además se sumará **5 Pts.** si Ud. acierta la posición de los equipos clasificados en sus respectivos grupos.
+* **c)** También se sumarán los Pts. que los equipos clasificados sumen en sus grupos.
+* **d)** En **Octavos de Final**, Ud. sumará **15 Pts.** por cada equipo acertado.
+* **e)** En **Cuartos de Final**, Ud. sumará **20 Pts.** por cada equipo acertado.
+* **f)** En **Semifinales**, Ud. sumará **25 Pts.** por cada equipo acertado.
+* **g)** En el partido por el **Tercer Puesto** se sumará **30 Pts.** por equipo acertado, más **35 Pts.** si acierta al tercer puesto.
+* **h)** Se sumará **40 Pts.** por cada equipo que Ud. acierte en la **Final**.
+* **i)** Si Ud. acierta el equipo **Campeón**, sumará un bonus de **50 Pts.**
 
-# --- SECCIÓN A: DATOS DEL PARTICIPANTE ---
-with st.container():
-    st.subheader("📋 Datos de Inscripción")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        nombre = st.text_input("Nombre y Apellido", placeholder="Ej: Lionel Messi")
-    with col2:
-        email = st.text_input("Correo Electrónico", placeholder="Ej: leo@correo.com")
-    with col3:
-        whatsapp = st.text_input("WhatsApp (con cód. área)", placeholder="Ej: 11 5555 9999") # <--- NUEVO CAMPO
+**2. Ronda Partido X Partido:**
+* **j)** Se tomarán todos los partidos de la fase de grupos. Deberá seleccionar el resultado (Local, Empate o Visitante). Cada acierto sumará **1 punto** para esta ronda, como también para el total del SUPER PRODE 2026.
+
+**3. Aclaraciones del juego:**
+* **k)** En caso de empate en la puntuación final se desempatará de la siguiente forma:
+    1.  El participante que haya logrado mayor cantidad de Pts. en la fase de grupos.
+    2.  De persistir el empate, ganará el participante que logre más Pts. sumados entre octavos, cuartos, semifinales, tercer puesto y final.
+    3.  De persistir el empate, el ganador se decidirá por sorteo.
+* **l)** Solo se permitirá un prode por persona.
+"""
+
+st.info(reglamento_texto)
+acepta_terminos = st.checkbox("✅ He leído, comprendo y ACEPTO el reglamento del juego.")
+
+if not acepta_terminos:
+    st.warning("⚠️ Debes aceptar el reglamento para desbloquear el formulario de inscripción.")
+    st.stop()
 
 st.markdown("---")
+st.subheader("👤 DATOS DEL PARTICIPANTE")
+c1, c2 = st.columns(2)
+nombre = c1.text_input("Nombre y Apellido")
+dni_raw = c2.text_input("DNI / Documento (Sin puntos)")
+email = c1.text_input("Correo Electrónico")
+direccion = c2.text_input("Localidad / Dirección")
 
-# DICCIONARIO PRINCIPAL DONDE GUARDAREMOS TODO
-predicciones = {}
+# Modificación para agregar WhatsApp junto a Edad
+c3, c4 = st.columns(2)
+edad = c3.number_input("Edad", 0, 100, step=1)
+whatsapp = c4.text_input("WhatsApp / Celular (con cód. área)") # <--- NUEVO CAMPO
 
-# --- SECCIÓN B: FASE DE GRUPOS ---
+# Limpieza básica de datos en vivo
+dni = dni_raw.replace(".", "").strip() # Quita puntos y espacios
+
+# ==========================================
+# 5. JUEGO (GRUPOS Y FINALES)
+# ==========================================
+st.markdown("---")
 st.header("1. FASE DE GRUPOS")
-st.info("Predice: (L)ocal, (E)mpate, (V)isitante y los 3 clasificados de cada grupo.")
+seleccion_grupos = {}
+resultados_partidos = {}
+cols_pantalla = st.columns(2)
+idx_col = 0
 
-tabs = st.tabs(list(GRUPOS.keys()))
+for nombre_grupo, equipos in GRUPOS.items():
+    codigo = nombre_grupo.split(" ")[1]
+    with cols_pantalla[idx_col % 2]: 
+        with st.expander(f"{nombre_grupo}", expanded=False):
+            st.markdown(f"<h5 style='color:#00FF87'>{nombre_grupo}</h5>", unsafe_allow_html=True)
+            for i, (idx_L, idx_V) in enumerate(FIXTURE_INDICES):
+                local, visita = equipos[idx_L], equipos[idx_V]
+                c_loc, c_btn, c_vis = st.columns([3.5, 3, 3.5])
+                with c_loc: st.markdown(f"<div class='team-text' style='text-align: right; font-weight: bold; font-size: 13px; padding-top: 10px;'>{local}</div>", unsafe_allow_html=True)
+                with c_btn:
+                    res = st.radio("R", ["L", "E", "V"], key=f"P_G{codigo}_{i+1}", horizontal=True, label_visibility="collapsed")
+                with c_vis: st.markdown(f"<div class='team-text' style='text-align: left; font-weight: bold; font-size: 13px; padding-top: 10px;'>{visita}</div>", unsafe_allow_html=True)
+                resultados_partidos[f"P_G{codigo}_{i+1}"] = res
+            st.markdown("<hr style='border-top: 1px solid #333;'>", unsafe_allow_html=True)
+            p1 = st.selectbox("1º", ["-"]+equipos, key=f"{nombre_grupo}_1")
+            p2 = st.selectbox("2º", ["-"]+equipos, key=f"{nombre_grupo}_2")
+            p3 = st.selectbox("3º", ["-"]+equipos, key=f"{nombre_grupo}_3")
+            seleccion_grupos[nombre_grupo] = [p1, p2, p3]
+    idx_col += 1
 
-for i, (nombre_grupo, equipos) in enumerate(GRUPOS.items()):
-    with tabs[i]:
-        st.subheader(f"{nombre_grupo}")
-        col_partidos, col_tabla = st.columns([1.5, 1])
-        
-        # B.1 Partidos del Grupo
-        with col_partidos:
-            st.markdown("##### ⚽ Partidos")
-            codigo_grupo = nombre_grupo.split(" ")[1] # "A", "B", etc.
-            
-            for idx_p, (idx_L, idx_V) in enumerate(FIXTURE_INDICES):
-                local = equipos[idx_L]
-                visita = equipos[idx_V]
-                
-                # ID único para cada partido: Ej "P_GA_1" (Partido Grupo A nro 1)
-                key_partido = f"P_G{codigo_grupo}_{idx_p+1}"
-                
-                predicciones[key_partido] = st.radio(
-                    f"{local} vs {visita}",
-                    options=["L", "E", "V"],
-                    horizontal=True,
-                    key=key_partido
-                )
-        
-        # B.2 Clasificados del Grupo
-        with col_tabla:
-            st.markdown("##### 📊 Clasificados")
-            # Selectores para 1ro, 2do y 3ro
-            # Usamos una lista con una opción vacía al principio
-            opciones_clasificados = ["Seleccionar..."] + equipos
-            
-            p1 = st.selectbox(f"🥇 1er Lugar {nombre_grupo}", opciones_clasificados, key=f"G{codigo_grupo}_1")
-            p2 = st.selectbox(f"🥈 2do Lugar {nombre_grupo}", opciones_clasificados, key=f"G{codigo_grupo}_2")
-            p3 = st.selectbox(f"🥉 3er Lugar {nombre_grupo}", opciones_clasificados, key=f"G{codigo_grupo}_3")
-            
-            predicciones[f"{nombre_grupo}_1"] = p1
-            predicciones[f"{nombre_grupo}_2"] = p2
-            predicciones[f"{nombre_grupo}_3"] = p3
-
-st.markdown("---")
-
-# --- SECCIÓN C: FASES FINALES (MULTISELECCION) ---
+st.divider()
 st.header("2. FASES FINALES")
-st.warning("⚠️ Importante: Selecciona los equipos que crees que llegarán a cada instancia.")
+equipos_clasificados = []
+for lista_equipos in seleccion_grupos.values():
+    for equipo in lista_equipos:
+        if equipo != "-": equipos_clasificados.append(equipo)
+equipos_clasificados = sorted(list(set(equipos_clasificados)))
 
-col_oct, col_cuar = st.columns(2)
+if len(equipos_clasificados) < 32: st.info("ℹ️ Completa las posiciones (1º, 2º y 3º) de todos los grupos arriba para ver a tus equipos aquí.")
+octavos = st.multiselect(f"Octavos ({len(equipos_clasificados)} clasificados)", equipos_clasificados, max_selections=16)
+cuartos = st.multiselect("Cuartos (8)", octavos if len(octavos)==16 else [], max_selections=8)
+semis = st.multiselect("Semis (4)", cuartos if len(cuartos)==8 else [], max_selections=4)
 
-with col_oct:
-    st.subheader("🏆 Octavos de Final")
-    octavos = st.multiselect(
-        "Elige 16 equipos que pasan a Octavos:",
-        TODOS_LOS_EQUIPOS,
-        max_selections=16
-    )
-    # Guardamos como string separado por comas
-    predicciones["Octavos"] = ", ".join(octavos)
+st.divider()
+st.header("3. PODIO")
+opc_final = semis if len(semis)==4 else []
+c1, c2, c3 = st.columns(3)
+campeon = c1.selectbox("🏆 CAMPEÓN", ["-"]+opc_final)
+subcampeon = c2.selectbox("🥈 SUBCAMPEÓN", ["-"]+opc_final)
+tercero = c3.selectbox("🥉 3ER PUESTO", ["-"]+opc_final)
 
-with col_cuar:
-    st.subheader("🏆 Cuartos de Final")
-    # Filtramos para que solo pueda elegir de los que puso en octavos (opcional, pero mejor UX)
-    opciones_cuartos = octavos if len(octavos) > 0 else TODOS_LOS_EQUIPOS
-    cuartos = st.multiselect(
-        "Elige 8 equipos que pasan a Cuartos:",
-        opciones_cuartos,
-        max_selections=8
-    )
-    predicciones["Cuartos"] = ", ".join(cuartos)
-
-col_semi, col_final = st.columns(2)
-
-with col_semi:
-    st.subheader("🏆 Semifinales")
-    opciones_semis = cuartos if len(cuartos) > 0 else TODOS_LOS_EQUIPOS
-    semis = st.multiselect(
-        "Elige 4 equipos Semifinalistas:",
-        opciones_semis,
-        max_selections=4
-    )
-    predicciones["Semis"] = ", ".join(semis)
-
-with col_final:
-    st.subheader("🥇 PODIO FINAL")
-    # Solo permitimos elegir campeón entre los semifinalistas seleccionados
-    opciones_podio = semis if len(semis) > 0 else TODOS_LOS_EQUIPOS
-    
-    campeon = st.selectbox("🏆 CAMPEÓN DEL MUNDO", ["-"] + opciones_podio)
-    subcampeon = st.selectbox("🥈 Subcampeón", ["-"] + opciones_podio)
-    tercero = st.selectbox("🥉 Tercer Puesto", ["-"] + opciones_podio)
-    
-    predicciones["Campeon"] = campeon
-    predicciones["Subcampeon"] = subcampeon
-    predicciones["Tercero"] = tercero
-
+# ==========================================
+# 6. BOTÓN DE ENVÍO CON VALIDACIÓN
+# ==========================================
 st.markdown("---")
-
-# --- SECCIÓN D: ENVÍO ---
-st.subheader("🚀 Enviar Pronóstico")
-
-if st.button("CONFIRMAR Y ENVIAR PRODE", type="primary", use_container_width=True):
+if st.button("ENVIAR PRONÓSTICO 🚀", type="primary"):
+    errores = []
     # Validaciones básicas
-    if not nombre or not email or not whatsapp:
-        st.error("❌ Por favor completa tu Nombre, Email y WhatsApp.")
-    elif len(octavos) != 16:
-        st.error(f"❌ Debes seleccionar exactamente 16 equipos en Octavos (llevas {len(octavos)}).")
-    elif len(cuartos) != 8:
-        st.error(f"❌ Debes seleccionar exactamente 8 equipos en Cuartos (llevas {len(cuartos)}).")
-    elif len(semis) != 4:
-        st.error(f"❌ Debes seleccionar exactamente 4 equipos en Semifinales (llevas {len(semis)}).")
-    elif campeon == "-" or subcampeon == "-" or tercero == "-":
-        st.error("❌ Debes definir el Podio completo (Campeón, Sub y Tercero).")
-    elif campeon == subcampeon or campeon == tercero or subcampeon == tercero:
-        st.error("❌ No puedes repetir el mismo equipo en el Podio.")
+    if not nombre or not dni or not email or not whatsapp: errores.append("⚠️ Faltan datos personales (incluido WhatsApp).")
+    if "@" not in email: errores.append("⚠️ El correo electrónico no parece válido.")
+    if len(dni) < 6 or not dni.isdigit(): errores.append("⚠️ El DNI debe contener solo números (mínimo 6).")
+    
+    # Validaciones del juego
+    for g, e in seleccion_grupos.items():
+        if "-" in e or len(set(e))!=3: errores.append(f"Revisar {g}")
+    if len(octavos)!=16 or len(cuartos)!=8 or len(semis)!=4: errores.append("Falta completar Playoffs.")
+    if "-" in [campeon, subcampeon, tercero]: errores.append("Falta Podio.")
+    
+    if errores:
+        for e in errores: st.error(e)
     else:
-        # Preparamos el paquete de datos
-        ahora_arg = datetime.datetime.now(pytz.timezone('America/Argentina/Buenos_Aires'))
+        # SI PASA LAS VALIDACIONES BÁSICAS, CHEQUEAMOS DUPLICADOS EN LA NUBE
+        with st.spinner("Verificando disponibilidad de usuario..."):
+            es_valido, mensaje_validacion = validar_duplicados_en_sheet(dni, email)
         
-        datos_finales = {
-            "Fecha": ahora_arg.strftime("%d/%m/%Y %H:%M:%S"),
-            "Participante": nombre,
-            "Email": email,
-            "WhatsApp": whatsapp, # <--- Se agrega al paquete
-            **predicciones
-        }
-        
-        with st.spinner("Guardando tu prode... ⏳"):
-            if guardar_en_google_sheets(datos_finales):
-                st.balloons()
-                st.success(f"✅ ¡Excelente {nombre}! Tu prode ha sido registrado exitosamente.")
-                st.info("Te hemos enviado una copia a tu correo (Simulado). ¡Mucha suerte!")
+        if not es_valido:
+            # Si ya existe, mostramos error y paramos
+            st.error(mensaje_validacion)
+        else:
+            # Si no existe, procedemos a guardar
+            datos_flat = {f"{g}_{i+1}": eq for g, lista in seleccion_grupos.items() for i, eq in enumerate(lista)}
+            datos_finales = {
+                "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Participante": nombre, "Email": email, "DNI": dni, "Edad": edad, "Direccion": direccion,
+                "WhatsApp": whatsapp, # <--- AGREGADO AL PAQUETE
+                **resultados_partidos, **datos_flat,
+                "Octavos": octavos, "Cuartos": cuartos, "Semis": semis,
+                "Campeon": campeon, "Subcampeon": subcampeon, "Tercero": tercero
+            }
+            
+            with st.spinner("Guardando pronóstico..."):
+                guardo_ok = guardar_en_google_sheets(datos_finales)
+                if guardo_ok:
+                    st.success("✅ ¡Datos guardados correctamente!")
+                    email_ok = enviar_correo_confirmacion(datos_finales)
+                    if email_ok:
+                        st.success(f"📧 ¡Correo enviado a {email}!")
+                        st.balloons()
+                    else:
+                        st.warning("⚠️ Datos guardados, pero falló el email.")
