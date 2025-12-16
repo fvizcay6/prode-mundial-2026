@@ -33,37 +33,44 @@ st.markdown("""
         margin-bottom: 0px;
     }
     
-    /* 3. ESTILO DE RADIO BUTTONS (CÍRCULOS) CENTRADOS Y LINDOS */
+    /* 3. ESTILO DE RADIO BUTTONS (CÍRCULOS) CENTRADOS */
+    
+    /* Contenedor del grupo de botones */
     div[role="radiogroup"] {
         display: flex;
-        justify-content: center; /* CENTRADO HORIZONTAL */
-        width: 100%;
-        gap: 15px; /* Espacio entre opciones */
+        justify-content: center !important; /* FORZAR CENTRADO */
+        width: 100% !important;
+        gap: 15px;
         margin-bottom: 10px;
+        margin-left: auto !important;
+        margin-right: auto !important;
     }
     
+    /* Cada opción individual (Círculo + Texto) */
     div[role="radiogroup"] label {
-        background-color: #111; /* Fondo muy oscuro sutil */
-        border: 1px solid #333;
-        padding: 5px 20px;      /* Espacio interno comodo */
-        border-radius: 20px;    /* Bordes redondeados (capsula) */
+        background-color: #1a1a1a;
+        border: 1px solid #444;
+        padding: 5px 20px;
+        border-radius: 20px; /* Forma de cápsula */
         transition: all 0.2s;
         display: flex;
         align-items: center;
         justify-content: center;
-    }
-    
-    div[role="radiogroup"] label:hover {
-        border-color: #00FF87; /* Borde verde al pasar mouse */
-        background-color: #222;
+        min-width: 60px; /* Ancho mínimo para que se vean parejos */
         cursor: pointer;
     }
     
-    /* Aumentar tamaño del texto L E V */
+    div[role="radiogroup"] label:hover {
+        border-color: #00FF87;
+        background-color: #222;
+    }
+    
+    /* Texto L E V */
     div[role="radiogroup"] label p {
         font-size: 16px !important;
         font-weight: bold;
         margin-bottom: 0px !important;
+        padding-left: 5px; /* Separar un poco del círculo */
     }
 
     /* 4. TÍTULO DEL PARTIDO (Optimizado Móvil) */
