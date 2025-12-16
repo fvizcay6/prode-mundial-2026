@@ -33,45 +33,45 @@ st.markdown("""
         margin-bottom: 0px;
     }
     
-    /* 3. OPTIMIZACIÓN RADIO BUTTONS (L-E-V) PARA CELULARES */
+    /* 3. ESTILO DE RADIO BUTTONS (CÍRCULOS) CENTRADOS Y LINDOS */
     div[role="radiogroup"] {
         display: flex;
-        justify-content: center;
+        justify-content: center; /* CENTRADO HORIZONTAL */
         width: 100%;
+        gap: 15px; /* Espacio entre opciones */
         margin-bottom: 10px;
     }
+    
     div[role="radiogroup"] label {
-        background-color: #1a1a1a;
-        border: 1px solid #444;
-        padding: 10px 0px; /* Botones más altos para tocar fácil */
-        width: 30%;        /* Ocupan todo el ancho disponible dividido en 3 */
-        text-align: center;
-        border-radius: 6px;
-        color: white;
-        font-size: 16px;
-        font-weight: bold;
-        margin: 0 4px;     /* Separación entre botones */
+        background-color: #111; /* Fondo muy oscuro sutil */
+        border: 1px solid #333;
+        padding: 5px 20px;      /* Espacio interno comodo */
+        border-radius: 20px;    /* Bordes redondeados (capsula) */
         transition: all 0.2s;
         display: flex;
-        justify-content: center;
         align-items: center;
+        justify-content: center;
     }
+    
     div[role="radiogroup"] label:hover {
-        border-color: #00FF87;
+        border-color: #00FF87; /* Borde verde al pasar mouse */
         background-color: #222;
         cursor: pointer;
     }
-    /* Ocultar el círculo del radio button para que parezca botón rectangular */
-    div[role="radiogroup"] label > div:first-child {
-        display: none;
-    }
     
-    /* 4. TEXTO DE EQUIPOS EN MÓVIL */
+    /* Aumentar tamaño del texto L E V */
+    div[role="radiogroup"] label p {
+        font-size: 16px !important;
+        font-weight: bold;
+        margin-bottom: 0px !important;
+    }
+
+    /* 4. TÍTULO DEL PARTIDO (Optimizado Móvil) */
     .match-title {
         text-align: center;
         font-weight: bold;
         font-size: 15px;
-        margin-bottom: 8px;
+        margin-bottom: 5px;
         color: #ddd;
         margin-top: 15px;
     }
@@ -216,7 +216,6 @@ def validar_duplicados_en_sheet(dni_input, email_input):
         client = gspread.authorize(creds)
         sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
         
-        # Ojo con los índices de columnas si agregas WhatsApp
         lista_emails = sheet.col_values(3) # Col C
         lista_dnis = sheet.col_values(4)   # Col D
         
@@ -242,13 +241,13 @@ def guardar_en_google_sheets(datos):
         fila = [
             datos["Fecha"], datos["Participante"], datos["Email"],
             datos["DNI"], datos["Edad"], datos["Direccion"],
-            datos["WhatsApp"] # <--- AGREGADO: Columna G
+            datos["WhatsApp"] # Col G
         ]
         # PARTIDOS
         for grupo in GRUPOS:
             codigo = grupo.split(" ")[1]
             for i in range(1, 7): fila.append(datos.get(f"P_G{codigo}_{i}", "-"))
-        # CLASIFICADOS DE GRUPO
+        # CLASIFICADOS
         for grupo in GRUPOS:
             fila.extend([datos[f"{grupo}_1"], datos[f"{grupo}_2"], datos[f"{grupo}_3"]])
         # FASES FINALES
@@ -309,7 +308,7 @@ direccion = c2.text_input("Localidad / Dirección")
 
 c3, c4 = st.columns(2)
 edad = c3.number_input("Edad", 0, 100, step=1)
-whatsapp = c4.text_input("WhatsApp / Celular (con cód. área)") # <--- NUEVO CAMPO
+whatsapp = c4.text_input("WhatsApp / Celular (con cód. área)")
 
 dni = dni_raw.replace(".", "").strip()
 
@@ -330,14 +329,14 @@ for nombre_grupo, equipos in GRUPOS.items():
             # Titulo del grupo
             st.markdown(f"<h5 style='color:#00FF87; text-align:center;'>{nombre_grupo}</h5>", unsafe_allow_html=True)
             
-            # --- LOOP PARTIDOS OPTIMIZADO PARA CELULAR ---
+            # --- LOOP PARTIDOS CENTRADOS ---
             for i, (idx_L, idx_V) in enumerate(FIXTURE_INDICES):
                 local, visita = equipos[idx_L], equipos[idx_V]
                 
                 # 1. Título del partido centrado
                 st.markdown(f"<div class='match-title'>{local} <span style='color:#00FF87; font-size:12px;'>vs</span> {visita}</div>", unsafe_allow_html=True)
                 
-                # 2. Botones L-E-V abajo
+                # 2. Botones L-E-V centrados
                 res = st.radio(
                     f"{local} vs {visita}",
                     ["L", "E", "V"],
