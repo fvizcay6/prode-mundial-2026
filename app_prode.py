@@ -10,25 +10,18 @@ import os
 import json
 
 # ==========================================
-# 1. CONFIGURACIÓN VISUAL
+# 1. CONFIGURACIÓN VISUAL Y CSS
 # ==========================================
 st.set_page_config(page_title="Prode Mundial 2026", layout="wide", page_icon="🏆")
 
 st.markdown("""
     <style>
-    /* CORRECCIÓN VISUAL PARA DESPLEGABLES (TEXTO NEGRO) */
-    div[data-baseweb="select"] > div {
-        color: black !important;
-    }
-    li[role="option"] {
-        color: black !important;
-        background-color: white !important;
-    }
-    ul[role="listbox"] {
-        background-color: white !important;
-    }
+    /* 1. CORRECCIÓN VISUAL PARA DESPLEGABLES (TEXTO NEGRO) */
+    div[data-baseweb="select"] > div { color: black !important; }
+    li[role="option"] { color: black !important; background-color: white !important; }
+    ul[role="listbox"] { background-color: white !important; }
     
-    /* ESTILOS GENERALES DE LA APP */
+    /* 2. ESTILOS GENERALES */
     .stApp { background-color: #000000; color: #ffffff; }
     p, label, .stMarkdown, .stCaption, .stCheckbox, li { color: #ffffff !important; font-family: 'Helvetica Neue', sans-serif; }
     h1, h2, h3 {
@@ -39,19 +32,51 @@ st.markdown("""
         text-transform: uppercase;
         margin-bottom: 0px;
     }
-    div[role="radiogroup"] { justify-content: center; }
+    
+    /* 3. OPTIMIZACIÓN RADIO BUTTONS (L-E-V) PARA CELULARES */
+    div[role="radiogroup"] {
+        display: flex;
+        justify-content: center;
+        width: 100%;
+        margin-bottom: 10px;
+    }
     div[role="radiogroup"] label {
-        background-color: #1a1a1a; border: 1px solid #444;
-        padding: 4px 12px; border-radius: 4px; color: white;
-        font-size: 14px; margin-right: 4px; transition: all 0.3s;
+        background-color: #1a1a1a;
+        border: 1px solid #444;
+        padding: 10px 0px; /* Botones más altos para tocar fácil */
+        width: 30%;        /* Ocupan todo el ancho disponible dividido en 3 */
+        text-align: center;
+        border-radius: 6px;
+        color: white;
+        font-size: 16px;
+        font-weight: bold;
+        margin: 0 4px;     /* Separación entre botones */
+        transition: all 0.2s;
+        display: flex;
+        justify-content: center;
+        align-items: center;
     }
-    div[role="radiogroup"] label:hover { border-color: #00FF87; background-color: #222; cursor: pointer; }
-    @media only screen and (max-width: 600px) {
-        h1 { font-size: 28px !important; }
-        .team-text { font-size: 11px !important; line-height: 1.2 !important; }
-        div[role="radiogroup"] label { padding: 2px 6px !important; font-size: 12px !important; }
-        .block-container { padding-left: 1rem; padding-right: 1rem; }
+    div[role="radiogroup"] label:hover {
+        border-color: #00FF87;
+        background-color: #222;
+        cursor: pointer;
     }
+    /* Ocultar el círculo del radio button para que parezca botón rectangular */
+    div[role="radiogroup"] label > div:first-child {
+        display: none;
+    }
+    
+    /* 4. TEXTO DE EQUIPOS EN MÓVIL */
+    .match-title {
+        text-align: center;
+        font-weight: bold;
+        font-size: 15px;
+        margin-bottom: 8px;
+        color: #ddd;
+        margin-top: 15px;
+    }
+    
+    /* 5. BOTÓN ENVIAR */
     div.stButton > button {
         background: linear-gradient(90deg, #00C853 0%, #B2FF59 100%);
         color: black; font-weight: 800; border: none; padding: 15px 20px;
@@ -145,7 +170,7 @@ def enviar_correo_confirmacion(datos):
         <div style="padding: 20px;">
             <h3>Hola, {datos['Participante']}</h3>
             <p>Tu participación ha sido registrada correctamente.</p>
-            <p><b>WhatsApp registrado:</b> {datos['WhatsApp']}</p>
+            <p><b>WhatsApp:</b> {datos['WhatsApp']}</p>
             <h3 style="color: #CF00FF;">🏆 TU PODIO FINAL</h3>
             <div style="background-color: #eee; padding: 15px; border-radius: 8px; text-align: center; font-size: 18px;">
                 🥇 <b>1º: {datos['Campeon']}</b><br>
@@ -191,8 +216,9 @@ def validar_duplicados_en_sheet(dni_input, email_input):
         client = gspread.authorize(creds)
         sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
         
-        lista_emails = sheet.col_values(3)
-        lista_dnis = sheet.col_values(4)
+        # Ojo con los índices de columnas si agregas WhatsApp
+        lista_emails = sheet.col_values(3) # Col C
+        lista_dnis = sheet.col_values(4)   # Col D
         
         if dni_input in lista_dnis:
             return False, f"⚠️ El DNI {dni_input} ya está registrado en el torneo."
@@ -218,11 +244,14 @@ def guardar_en_google_sheets(datos):
             datos["DNI"], datos["Edad"], datos["Direccion"],
             datos["WhatsApp"] # <--- AGREGADO: Columna G
         ]
+        # PARTIDOS
         for grupo in GRUPOS:
             codigo = grupo.split(" ")[1]
             for i in range(1, 7): fila.append(datos.get(f"P_G{codigo}_{i}", "-"))
+        # CLASIFICADOS DE GRUPO
         for grupo in GRUPOS:
             fila.extend([datos[f"{grupo}_1"], datos[f"{grupo}_2"], datos[f"{grupo}_3"]])
+        # FASES FINALES
         fila.append(", ".join(datos["Octavos"]))
         fila.append(", ".join(datos["Cuartos"]))
         fila.append(", ".join(datos["Semis"]))
@@ -278,13 +307,11 @@ dni_raw = c2.text_input("DNI / Documento (Sin puntos)")
 email = c1.text_input("Correo Electrónico")
 direccion = c2.text_input("Localidad / Dirección")
 
-# Modificación para agregar WhatsApp junto a Edad
 c3, c4 = st.columns(2)
 edad = c3.number_input("Edad", 0, 100, step=1)
 whatsapp = c4.text_input("WhatsApp / Celular (con cód. área)") # <--- NUEVO CAMPO
 
-# Limpieza básica de datos en vivo
-dni = dni_raw.replace(".", "").strip() # Quita puntos y espacios
+dni = dni_raw.replace(".", "").strip()
 
 # ==========================================
 # 5. JUEGO (GRUPOS Y FINALES)
@@ -300,19 +327,36 @@ for nombre_grupo, equipos in GRUPOS.items():
     codigo = nombre_grupo.split(" ")[1]
     with cols_pantalla[idx_col % 2]: 
         with st.expander(f"{nombre_grupo}", expanded=False):
-            st.markdown(f"<h5 style='color:#00FF87'>{nombre_grupo}</h5>", unsafe_allow_html=True)
+            # Titulo del grupo
+            st.markdown(f"<h5 style='color:#00FF87; text-align:center;'>{nombre_grupo}</h5>", unsafe_allow_html=True)
+            
+            # --- LOOP PARTIDOS OPTIMIZADO PARA CELULAR ---
             for i, (idx_L, idx_V) in enumerate(FIXTURE_INDICES):
                 local, visita = equipos[idx_L], equipos[idx_V]
-                c_loc, c_btn, c_vis = st.columns([3.5, 3, 3.5])
-                with c_loc: st.markdown(f"<div class='team-text' style='text-align: right; font-weight: bold; font-size: 13px; padding-top: 10px;'>{local}</div>", unsafe_allow_html=True)
-                with c_btn:
-                    res = st.radio("R", ["L", "E", "V"], key=f"P_G{codigo}_{i+1}", horizontal=True, label_visibility="collapsed")
-                with c_vis: st.markdown(f"<div class='team-text' style='text-align: left; font-weight: bold; font-size: 13px; padding-top: 10px;'>{visita}</div>", unsafe_allow_html=True)
+                
+                # 1. Título del partido centrado
+                st.markdown(f"<div class='match-title'>{local} <span style='color:#00FF87; font-size:12px;'>vs</span> {visita}</div>", unsafe_allow_html=True)
+                
+                # 2. Botones L-E-V abajo
+                res = st.radio(
+                    f"{local} vs {visita}",
+                    ["L", "E", "V"],
+                    key=f"P_G{codigo}_{i+1}",
+                    horizontal=True,
+                    label_visibility="collapsed"
+                )
                 resultados_partidos[f"P_G{codigo}_{i+1}"] = res
-            st.markdown("<hr style='border-top: 1px solid #333;'>", unsafe_allow_html=True)
-            p1 = st.selectbox("1º", ["-"]+equipos, key=f"{nombre_grupo}_1")
-            p2 = st.selectbox("2º", ["-"]+equipos, key=f"{nombre_grupo}_2")
-            p3 = st.selectbox("3º", ["-"]+equipos, key=f"{nombre_grupo}_3")
+                
+                # Separador
+                if i < len(FIXTURE_INDICES) - 1:
+                    st.markdown("<div style='margin-bottom: 10px; border-bottom: 1px solid #333;'></div>", unsafe_allow_html=True)
+            # ---------------------------------------------
+            
+            st.markdown("<hr style='border-top: 2px solid #00FF87; margin-top: 20px;'>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; margin-bottom:10px;'><b>📊 Clasificados</b></div>", unsafe_allow_html=True)
+            p1 = st.selectbox("1º Clasificado", ["-"]+equipos, key=f"{nombre_grupo}_1")
+            p2 = st.selectbox("2º Clasificado", ["-"]+equipos, key=f"{nombre_grupo}_2")
+            p3 = st.selectbox("3º Clasificado", ["-"]+equipos, key=f"{nombre_grupo}_3")
             seleccion_grupos[nombre_grupo] = [p1, p2, p3]
     idx_col += 1
 
@@ -343,12 +387,10 @@ tercero = c3.selectbox("🥉 3ER PUESTO", ["-"]+opc_final)
 st.markdown("---")
 if st.button("ENVIAR PRONÓSTICO 🚀", type="primary"):
     errores = []
-    # Validaciones básicas
     if not nombre or not dni or not email or not whatsapp: errores.append("⚠️ Faltan datos personales (incluido WhatsApp).")
     if "@" not in email: errores.append("⚠️ El correo electrónico no parece válido.")
     if len(dni) < 6 or not dni.isdigit(): errores.append("⚠️ El DNI debe contener solo números (mínimo 6).")
     
-    # Validaciones del juego
     for g, e in seleccion_grupos.items():
         if "-" in e or len(set(e))!=3: errores.append(f"Revisar {g}")
     if len(octavos)!=16 or len(cuartos)!=8 or len(semis)!=4: errores.append("Falta completar Playoffs.")
@@ -357,20 +399,17 @@ if st.button("ENVIAR PRONÓSTICO 🚀", type="primary"):
     if errores:
         for e in errores: st.error(e)
     else:
-        # SI PASA LAS VALIDACIONES BÁSICAS, CHEQUEAMOS DUPLICADOS EN LA NUBE
         with st.spinner("Verificando disponibilidad de usuario..."):
             es_valido, mensaje_validacion = validar_duplicados_en_sheet(dni, email)
         
         if not es_valido:
-            # Si ya existe, mostramos error y paramos
             st.error(mensaje_validacion)
         else:
-            # Si no existe, procedemos a guardar
             datos_flat = {f"{g}_{i+1}": eq for g, lista in seleccion_grupos.items() for i, eq in enumerate(lista)}
             datos_finales = {
                 "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "Participante": nombre, "Email": email, "DNI": dni, "Edad": edad, "Direccion": direccion,
-                "WhatsApp": whatsapp, # <--- AGREGADO AL PAQUETE
+                "WhatsApp": whatsapp, 
                 **resultados_partidos, **datos_flat,
                 "Octavos": octavos, "Cuartos": cuartos, "Semis": semis,
                 "Campeon": campeon, "Subcampeon": subcampeon, "Tercero": tercero
