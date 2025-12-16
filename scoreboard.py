@@ -27,6 +27,32 @@ st.markdown("""
         font-size: 1.5rem;
     }
     .stDataFrame { width: 100%; }
+    
+    /* ESTILOS DEL REPORTE DIARIO */
+    .report-card {
+        background-color: #1A1A1A;
+        border: 1px solid #333;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    }
+    .report-title {
+        color: #00FF87;
+        font-size: 18px;
+        font-weight: bold;
+        margin-bottom: 5px;
+        text-transform: uppercase;
+    }
+    .report-stat {
+        font-size: 24px;
+        font-weight: bold;
+        color: white;
+    }
+    .report-desc {
+        font-size: 14px;
+        color: #aaa;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -170,6 +196,10 @@ def generar_ranking_df(datos_usuarios, resultados_reales, ranking_anterior):
             return 0
 
         df['Diff'] = df.apply(calc_diff, axis=1)
+        
+        # GUARDAMOS COLUMNAS AUXILIARES ANTES DE FORMATEAR
+        # Esto nos sirve para el reporte, pero no lo mostramos en la tabla final formateada
+        df_reporte = df.copy()
 
         # Formatear Nombre con Diff
         def format_name(row):
@@ -181,13 +211,86 @@ def generar_ranking_df(datos_usuarios, resultados_reales, ranking_anterior):
         df['Participante'] = df.apply(format_name, axis=1)
         df['Pos'] = df['Rank_Actual'].apply(asignar_medalla)
         
-        # Seleccionar columnas finales
-        df = df[['Pos', 'Participante', 'TOTAL', 'Partidos', 'Grupos', 'Octavos', 'Cuartos', 'Semifinales', '3ro', 'Final']]
+        # Seleccionar columnas finales para mostrar
+        df_display = df[['Pos', 'Participante', 'TOTAL', 'Partidos', 'Grupos', 'Octavos', 'Cuartos', 'Semifinales', '3ro', 'Final']]
     
-    return df
+        return df_display, df_reporte
+    
+    return pd.DataFrame(), pd.DataFrame()
 
 # ==========================================
-# 5. APP PRINCIPAL
+# 5. GENERADOR DE REPORTE AUTOMÁTICO
+# ==========================================
+def mostrar_reporte_diario(df_analytics):
+    """
+    Analiza el DataFrame y muestra widgets con las tendencias.
+    """
+    if df_analytics.empty: return
+
+    # Filtramos quienes subieron y bajaron
+    subidas = df_analytics[df_analytics['Diff'] > 0].sort_values('Diff', ascending=False)
+    bajadas = df_analytics[df_analytics['Diff'] < 0].sort_values('Diff', ascending=True) # Los negativos más grandes primero
+
+    hay_movimiento = not subidas.empty or not bajadas.empty
+
+    if hay_movimiento:
+        with st.expander("📰 REPORTE DIARIO DE TENDENCIAS (Ver Análisis)", expanded=True):
+            r1, r2, r3 = st.columns(3)
+            
+            # 1. LA FIGURA (Mayor subida)
+            with r1:
+                if not subidas.empty:
+                    top_climber = subidas.iloc[0]
+                    nombre = top_climber['Participante']
+                    puestos = top_climber['Diff']
+                    st.markdown(f"""
+                    <div class="report-card">
+                        <div class="report-title">🚀 LA REMONTADA</div>
+                        <div class="report-stat">{nombre}</div>
+                        <div class="report-desc">Escaló <b>{puestos}</b> posiciones hoy.</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.info("Nadie subió de puesto hoy.")
+
+            # 2. EL DESLIZ (Mayor bajada)
+            with r2:
+                if not bajadas.empty:
+                    top_faller = bajadas.iloc[0]
+                    nombre = top_faller['Participante']
+                    puestos = top_faller['Diff'] # Es negativo
+                    st.markdown(f"""
+                    <div class="report-card">
+                        <div class="report-title">📉 CAÍDA LIBRE</div>
+                        <div class="report-stat">{nombre}</div>
+                        <div class="report-desc">Perdió <b>{abs(puestos)}</b> posiciones.</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.info("Nadie bajó de puesto hoy.")
+
+            # 3. RESUMEN
+            with r3:
+                total_subieron = len(subidas)
+                total_bajaron = len(bajadas)
+                total_igual = len(df_analytics) - total_subieron - total_bajaron
+                
+                st.markdown(f"""
+                <div class="report-card">
+                    <div class="report-title">📊 PULSO DEL TORNEO</div>
+                    <div class="report-desc">
+                    🟢 <b>{total_subieron}</b> Mejoraron<br>
+                    🔴 <b>{total_bajaron}</b> Cayeron<br>
+                    ⚪ <b>{total_igual}</b> Se mantienen
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+    else:
+        # Si no hay cambios (por ejemplo, primer día o sin cargar resultados nuevos tras cerrar día)
+        st.info("ℹ️ Aún no hay movimientos registrados respecto al último cierre.")
+
+# ==========================================
+# 6. APP PRINCIPAL
 # ==========================================
 st.title("🏆 RANKING MUNDIAL 2026")
 
@@ -196,23 +299,30 @@ datos_p, res_admin, rank_ant = obtener_todo()
 if not res_admin: 
     res_admin = { "PARTIDOS": {}, "GRUPOS": {}, "OCTAVOS": [], "CUARTOS": [], "SEMIS": [], "TERCERO_GANADOR": "-", "FINALISTAS": [], "CAMPEON": "-", "SUBCAMPEON": "-" }
 
-df = generar_ranking_df(datos_p, res_admin, rank_ant)
+df_display, df_analytics = generar_ranking_df(datos_p, res_admin, rank_ant)
 fecha = datetime.datetime.now(pytz.timezone('America/Argentina/Buenos_Aires')).strftime("%d/%m %H:%M")
 
-if not df.empty:
+if not df_display.empty:
     c1, c2 = st.columns([3, 1])
     c1.success(f"✅ Última Actualización: {fecha} (Hora ARG)")
     if c2.button("🔄 Refrescar"): st.cache_data.clear(); st.rerun()
 
-    if len(df)>=3 and df.iloc[0]['TOTAL'] > 0:
+    # --- PODIO ---
+    if len(df_display)>=3 and df_display.iloc[0]['TOTAL'] > 0:
         c1, c2, c3 = st.columns(3)
-        c2.metric("🥇 LÍDER", df.iloc[0]['Participante'].split('(')[0], f"{df.iloc[0]['TOTAL']}")
-        c1.metric("🥈 SEGUNDO", df.iloc[1]['Participante'].split('(')[0], f"{df.iloc[1]['TOTAL']}")
-        c3.metric("🥉 TERCERO", df.iloc[2]['Participante'].split('(')[0], f"{df.iloc[2]['TOTAL']}")
-
+        # 1ro al medio, 2do izq, 3ro der
+        c2.metric("🥇 LÍDER", df_display.iloc[0]['Participante'].split('(')[0], f"{df_display.iloc[0]['TOTAL']}")
+        c1.metric("🥈 SEGUNDO", df_display.iloc[1]['Participante'].split('(')[0], f"{df_display.iloc[1]['TOTAL']}")
+        c3.metric("🥉 TERCERO", df_display.iloc[2]['Participante'].split('(')[0], f"{df_display.iloc[2]['TOTAL']}")
+    
     st.markdown("---")
+
+    # --- NUEVO: REPORTE DIARIO ---
+    mostrar_reporte_diario(df_analytics)
+
+    # --- TABLA ---
     st.dataframe(
-        df.style.applymap(color_trend, subset=['Participante']),
+        df_display.style.applymap(color_trend, subset=['Participante']),
         use_container_width=True, 
         height=800, 
         hide_index=True
