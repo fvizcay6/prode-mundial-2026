@@ -79,7 +79,6 @@ if check_password():
         except: return None
 
     def guardar_memoria(datos):
-        """Guarda SOLO los resultados de partidos/fases"""
         try:
             client = get_client()
             sheet = client.open(NOMBRE_HOJA_GOOGLE).worksheet("Resultados_Admin")
@@ -89,7 +88,6 @@ if check_password():
             st.error(f"Error guardando resultados: {e}"); return False
 
     def guardar_cierre_dia(ranking_dict):
-        """Guarda SOLO la foto del ranking (Historial)"""
         try:
             client = get_client()
             sheet = client.open(NOMBRE_HOJA_GOOGLE).worksheet("Ranking_Anterior")
@@ -160,6 +158,22 @@ if check_password():
         puntos += pts_oct + pts_cua + pts_sem + pts_ter + pts_fin
         desglose.update({'Octavos':pts_oct, 'Cuartos':pts_cua, 'Semifinales':pts_sem, 'Tercer Puesto':pts_ter, 'Final/Campeon':pts_fin, 'TOTAL':puntos})
         return desglose
+    
+    # === NUEVA FUNCIÓN DE VALIDACIÓN ===
+    def validar_datos_cargados(reales):
+        errores = []
+        # Validar Grupos duplicados
+        if "GRUPOS" in reales:
+            for nombre_grupo, data in reales["GRUPOS"].items():
+                # Lista de clasificados seleccionados (ignorando "-")
+                clasificados = [data.get("1"), data.get("2"), data.get("3")]
+                clasificados_limpios = [c for c in clasificados if c != "-" and c is not None]
+                
+                # Si hay duplicados, la longitud del set será menor a la lista
+                if len(clasificados_limpios) != len(set(clasificados_limpios)):
+                    errores.append(f"⚠️ **{nombre_grupo}**: Has seleccionado el mismo país dos veces en los puestos 1º, 2º o 3º.")
+        
+        return errores
 
     # ==========================================
     # 4. INTERFAZ
@@ -213,57 +227,63 @@ if check_password():
     RESULTADOS_REALES_DINAMICO = { "PARTIDOS": partidos_reales, "GRUPOS": grupos_reales, "OCTAVOS": octavos_reales, "CUARTOS": cuartos_reales, "SEMIS": semis_reales, "TERCERO_GANADOR": tercero_ganador_real, "FINALISTAS": [campeon_real, subcampeon_real] if campeon_real != "-" else [], "CAMPEON": campeon_real, "SUBCAMPEON": subcampeon_real }
 
     # ==========================================
-    # 5. BOTONES DE ACCIÓN (LÓGICA CORREGIDA)
+    # 5. BOTONES DE ACCIÓN (CON VALIDACIÓN)
     # ==========================================
     st.markdown("---")
     st.header("ACCIONES")
 
     c1, c2, c3, c4 = st.columns(4)
 
-    # BOTÓN 1: SOLO CALCULAR (Sin guardar nada)
+    # 1. SOLO CALCULAR
     if c1.button("🔄 PREVISUALIZAR TABLA", use_container_width=True):
-        client = get_client()
-        datos = client.open(NOMBRE_HOJA_GOOGLE).sheet1.get_all_records()
-        if datos:
-            tabla = []
-            for u in datos:
-                pts = calcular_puntaje_participante(u, RESULTADOS_REALES_DINAMICO)
-                tabla.append({"Participante": u["Participante"], "TOTAL": pts["TOTAL"], "Partidos": pts["Partidos"], "Grupos": pts["Grupos"], "8vos": pts["Octavos"], "4tos": pts["Cuartos"], "Semis": pts["Semifinales"], "Final": pts["Final/Campeon"]})
-            df = pd.DataFrame(tabla)
-            df['Sort'] = df['8vos'] + df['4tos'] + df['Semis'] + df['Final']
-            df = df.sort_values(by=["TOTAL", "Grupos", "Sort"], ascending=False).drop(columns=['Sort']).reset_index(drop=True)
-            df.index += 1
-            st.dataframe(df, use_container_width=True)
-
-    # BOTÓN 2: GUARDAR RESULTADOS (Genera cambios en el Scoreboard, NO TOCA EL HISTORIAL)
-    if c2.button("💾 GUARDAR RESULTADOS", type="primary", use_container_width=True, help="Usa esto para actualizar los puntos en tiempo real."):
-        if guardar_memoria(RESULTADOS_REALES_DINAMICO):
-            st.success("✅ Resultados guardados. El Scoreboard ahora comparará los puntos nuevos con el Historial viejo.")
-            st.rerun()
-
-    # BOTÓN 3: CERRAR DÍA (Saca la FOTO para comparar MAÑANA)
-    if c3.button("📸 CERRAR DÍA (Guardar Foto)", use_container_width=True, help="Usa esto SOLO al terminar la jornada."):
-        with st.spinner("Guardando foto del ranking..."):
+        errores = validar_datos_cargados(RESULTADOS_REALES_DINAMICO)
+        if errores:
+            for e in errores: st.error(e)
+        else:
             client = get_client()
             datos = client.open(NOMBRE_HOJA_GOOGLE).sheet1.get_all_records()
             if datos:
-                # 1. Calculamos tabla con los resultados ACTUALES
                 tabla = []
                 for u in datos:
                     pts = calcular_puntaje_participante(u, RESULTADOS_REALES_DINAMICO)
-                    tabla.append({"Participante": u["Participante"], "TOTAL": pts["TOTAL"], "Grupos": pts["Grupos"], "Sort": pts["Octavos"]+pts["Cuartos"]+pts["Final/Campeon"]})
-                
-                # 2. Ordenamos
-                df = pd.DataFrame(tabla).sort_values(by=["TOTAL", "Grupos", "Sort"], ascending=False).reset_index(drop=True)
-                
-                # 3. Guardamos {Participante: Posicion} en Ranking_Anterior
-                ranking_dict = {}
-                for idx, row in df.iterrows():
-                    ranking_dict[row['Participante']] = idx + 1
-                
-                if guardar_cierre_dia(ranking_dict):
-                    st.success("✅ Día cerrado. Las flechas del Scoreboard se han reseteado a (0).")
-    
-    # BOTÓN 4: RESET
+                    tabla.append({"Participante": u["Participante"], "TOTAL": pts["TOTAL"], "Partidos": pts["Partidos"], "Grupos": pts["Grupos"], "8vos": pts["Octavos"], "4tos": pts["Cuartos"], "Semis": pts["Semifinales"], "Final": pts["Final/Campeon"]})
+                df = pd.DataFrame(tabla)
+                df['Sort'] = df['8vos'] + df['4tos'] + df['Semis'] + df['Final']
+                df = df.sort_values(by=["TOTAL", "Grupos", "Sort"], ascending=False).drop(columns=['Sort']).reset_index(drop=True)
+                df.index += 1
+                st.dataframe(df, use_container_width=True)
+
+    # 2. GUARDAR RESULTADOS (LIVE)
+    if c2.button("💾 GUARDAR RESULTADOS", type="primary", use_container_width=True, help="Usa esto para actualizar los puntos en tiempo real."):
+        errores = validar_datos_cargados(RESULTADOS_REALES_DINAMICO)
+        if errores:
+            for e in errores: st.error(e)
+        else:
+            if guardar_memoria(RESULTADOS_REALES_DINAMICO):
+                st.success("✅ Resultados guardados. Scoreboard actualizado.")
+                st.rerun()
+
+    # 3. CERRAR DÍA (FOTO)
+    if c3.button("📸 CERRAR DÍA (Guardar Foto)", use_container_width=True, help="Usa esto SOLO al terminar la jornada."):
+        errores = validar_datos_cargados(RESULTADOS_REALES_DINAMICO)
+        if errores:
+            for e in errores: st.error(e)
+        else:
+            with st.spinner("Guardando foto del ranking..."):
+                client = get_client()
+                datos = client.open(NOMBRE_HOJA_GOOGLE).sheet1.get_all_records()
+                if datos:
+                    tabla = []
+                    for u in datos:
+                        pts = calcular_puntaje_participante(u, RESULTADOS_REALES_DINAMICO)
+                        tabla.append({"Participante": u["Participante"], "TOTAL": pts["TOTAL"], "Grupos": pts["Grupos"], "Sort": pts["Octavos"]+pts["Cuartos"]+pts["Final/Campeon"]})
+                    df = pd.DataFrame(tabla).sort_values(by=["TOTAL", "Grupos", "Sort"], ascending=False).reset_index(drop=True)
+                    ranking_dict = {}
+                    for idx, row in df.iterrows():
+                        ranking_dict[row['Participante']] = idx + 1
+                    if guardar_cierre_dia(ranking_dict):
+                        st.success("✅ Día cerrado. Las flechas del Scoreboard se han reseteado.")
+
+    # 4. RESET
     if c4.button("🗑️ RESETEAR", type="secondary", use_container_width=True):
         if resetear_memoria(): st.warning("⚠️ Borrado."); st.rerun()
