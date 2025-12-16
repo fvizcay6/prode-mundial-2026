@@ -79,7 +79,7 @@ if check_password():
         except: return None
 
     def guardar_memoria(datos):
-        """Guarda la configuración de resultados en la hoja Resultados_Admin"""
+        """Guarda SOLO los resultados de partidos/fases"""
         try:
             client = get_client()
             sheet = client.open(NOMBRE_HOJA_GOOGLE).worksheet("Resultados_Admin")
@@ -89,7 +89,7 @@ if check_password():
             st.error(f"Error guardando resultados: {e}"); return False
 
     def guardar_cierre_dia(ranking_dict):
-        """Guarda la FOTO del ranking en la hoja Ranking_Anterior"""
+        """Guarda SOLO la foto del ranking (Historial)"""
         try:
             client = get_client()
             sheet = client.open(NOMBRE_HOJA_GOOGLE).worksheet("Ranking_Anterior")
@@ -213,14 +213,14 @@ if check_password():
     RESULTADOS_REALES_DINAMICO = { "PARTIDOS": partidos_reales, "GRUPOS": grupos_reales, "OCTAVOS": octavos_reales, "CUARTOS": cuartos_reales, "SEMIS": semis_reales, "TERCERO_GANADOR": tercero_ganador_real, "FINALISTAS": [campeon_real, subcampeon_real] if campeon_real != "-" else [], "CAMPEON": campeon_real, "SUBCAMPEON": subcampeon_real }
 
     # ==========================================
-    # 5. BOTONES DE ACCIÓN (LÓGICA UNIFICADA)
+    # 5. BOTONES DE ACCIÓN (LÓGICA CORREGIDA)
     # ==========================================
     st.markdown("---")
     st.header("ACCIONES")
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
 
-    # 1. BOTÓN SOLO CALCULAR
+    # BOTÓN 1: SOLO CALCULAR (Sin guardar nada)
     if c1.button("🔄 PREVISUALIZAR TABLA", use_container_width=True):
         client = get_client()
         datos = client.open(NOMBRE_HOJA_GOOGLE).sheet1.get_all_records()
@@ -235,39 +235,35 @@ if check_password():
             df.index += 1
             st.dataframe(df, use_container_width=True)
 
-    # 2. BOTÓN "COMBO" (GUARDAR DATOS + ACTUALIZAR HISTORIAL DE RANKING)
-    if c2.button("💾 GUARDAR Y ACTUALIZAR", type="primary", use_container_width=True, help="Guarda los resultados Y actualiza el historial de posiciones para calcular subidas/bajadas."):
-        with st.spinner("Procesando datos y ranking..."):
-            # A) Guardamos los datos del partido/fases (Lo que lee el Scoreboard)
-            datos_guardados = guardar_memoria(RESULTADOS_REALES_DINAMICO)
-            
-            # B) Calculamos el ranking y guardamos la 'foto' (Para los diffs +/-)
-            historial_guardado = False
+    # BOTÓN 2: GUARDAR RESULTADOS (Genera cambios en el Scoreboard, NO TOCA EL HISTORIAL)
+    if c2.button("💾 GUARDAR RESULTADOS", type="primary", use_container_width=True, help="Usa esto para actualizar los puntos en tiempo real."):
+        if guardar_memoria(RESULTADOS_REALES_DINAMICO):
+            st.success("✅ Resultados guardados. El Scoreboard ahora comparará los puntos nuevos con el Historial viejo.")
+            st.rerun()
+
+    # BOTÓN 3: CERRAR DÍA (Saca la FOTO para comparar MAÑANA)
+    if c3.button("📸 CERRAR DÍA (Guardar Foto)", use_container_width=True, help="Usa esto SOLO al terminar la jornada."):
+        with st.spinner("Guardando foto del ranking..."):
             client = get_client()
-            datos_usuarios = client.open(NOMBRE_HOJA_GOOGLE).sheet1.get_all_records()
-            if datos_usuarios:
+            datos = client.open(NOMBRE_HOJA_GOOGLE).sheet1.get_all_records()
+            if datos:
+                # 1. Calculamos tabla con los resultados ACTUALES
                 tabla = []
-                for u in datos_usuarios:
+                for u in datos:
                     pts = calcular_puntaje_participante(u, RESULTADOS_REALES_DINAMICO)
                     tabla.append({"Participante": u["Participante"], "TOTAL": pts["TOTAL"], "Grupos": pts["Grupos"], "Sort": pts["Octavos"]+pts["Cuartos"]+pts["Final/Campeon"]})
                 
-                # Ordenamos
+                # 2. Ordenamos
                 df = pd.DataFrame(tabla).sort_values(by=["TOTAL", "Grupos", "Sort"], ascending=False).reset_index(drop=True)
                 
-                # Creamos diccionario {Participante: Posicion}
+                # 3. Guardamos {Participante: Posicion} en Ranking_Anterior
                 ranking_dict = {}
                 for idx, row in df.iterrows():
                     ranking_dict[row['Participante']] = idx + 1
                 
-                # Guardamos en la hoja Ranking_Anterior
-                historial_guardado = guardar_cierre_dia(ranking_dict)
-
-            if datos_guardados and historial_guardado:
-                st.success("✅ Resultados guardados y Ranking actualizado correctamente.")
-                st.rerun()
-            else:
-                st.error("Hubo un error al guardar algunos datos.")
-
-    # 3. BOTÓN RESET
-    if c3.button("🗑️ RESETEAR", type="secondary", use_container_width=True):
+                if guardar_cierre_dia(ranking_dict):
+                    st.success("✅ Día cerrado. Las flechas del Scoreboard se han reseteado a (0).")
+    
+    # BOTÓN 4: RESET
+    if c4.button("🗑️ RESETEAR", type="secondary", use_container_width=True):
         if resetear_memoria(): st.warning("⚠️ Borrado."); st.rerun()
