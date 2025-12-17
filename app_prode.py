@@ -69,15 +69,22 @@ GRUPOS = {
 TODOS_LOS_EQUIPOS = sorted([eq for lista in GRUPOS.values() for eq in lista])
 FIXTURE_INDICES = [(0,1), (2,3), (0,2), (1,3), (0,3), (1,2)]
 
+# ==========================================
+# FUNCIONES
+# ==========================================
+def obtener_client_gs():
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    contenido = st.secrets["google_json"]["contenido_archivo"]
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(contenido, strict=False), scope)
+    return gspread.authorize(creds)
+
 def enviar_correo_confirmacion(datos):
     try:
         email_origen = st.secrets["email_credentials"]["EMAIL_ORIGEN"]
         password_app = st.secrets["email_credentials"]["PASSWORD_APP"]
     except: return False
-
     destinatario = datos["Email"]
     asunto = f"🏆 Ticket Oficial Mundial 2026 - {datos['Participante']}"
-    
     html_partidos = ""
     for nombre_grupo, equipos in GRUPOS.items():
         codigo = nombre_grupo.split(" ")[1]
@@ -89,13 +96,10 @@ def enviar_correo_confirmacion(datos):
             res_txt = "EMPATE" if eleccion == "E" else (local if eleccion == "L" else visita)
             html_partidos += f"<span style='font-size: 12px;'>• {local} vs {visita} 👉 <b>{res_txt}</b></span><br>"
         html_partidos += f"<br><span style='font-size: 12px; color: #444;'><i>Clasificados: 1. {p1} | 2. {p2} | 3. {p3}</i></span></div>"
-
     lista_octavos = "".join([f"<div style='margin-left:10px;'>- {eq}</div>" for eq in datos['Octavos']])
     lista_cuartos = "".join([f"<div style='margin-left:10px;'>- {eq}</div>" for eq in datos['Cuartos']])
     lista_semis = "".join([f"<div style='margin-left:10px;'><b>- {eq}</b></div>" for eq in datos['Semis']])
-
     liga_info = f"<p><b>Liga Privada:</b> {datos['Liga']}</p>" if datos['Liga'] else ""
-
     cuerpo = f"""
     <div style="font-family: sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; padding: 20px; background-color: #f9f9f9;">
         <div style="text-align: center; background-color: #000; padding: 20px; color: white;">
@@ -109,43 +113,29 @@ def enviar_correo_confirmacion(datos):
             {liga_info}
             <h3 style="color: #CF00FF;">🏆 TU PODIO FINAL</h3>
             <div style="background-color: #eee; padding: 15px; border-radius: 8px; text-align: center; font-size: 18px;">
-                🥇 <b>1º: {datos['Campeon']}</b><br>
-                🥈 2º: {datos['Subcampeon']}<br>
-                🥉 3º: {datos['Tercero']}
+                🥇 <b>1º: {datos['Campeon']}</b><br>🥈 2º: {datos['Subcampeon']}<br>🥉 3º: {datos['Tercero']}
             </div>
             <h3 style="color: #009688;">⚔️ FASES FINALES</h3>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                 <div style="background: #e0f2f1; padding: 10px; border-radius: 5px;"><b>SEMIFINALISTAS (4)</b><br>{lista_semis}</div>
                 <div style="background: #e0f2f1; padding: 10px; border-radius: 5px;"><b>CUARTOS DE FINAL (8)</b><br>{lista_cuartos}</div>
             </div>
-            <div style="background: #f1f8e9; padding: 10px; border-radius: 5px; margin-top: 10px;">
-                <b>OCTAVOS DE FINAL (16)</b><br>{lista_octavos}
-            </div>
+            <div style="background: #f1f8e9; padding: 10px; border-radius: 5px; margin-top: 10px;"><b>OCTAVOS DE FINAL (16)</b><br>{lista_octavos}</div>
             <h3 style="color: #000;">⚽ FASE DE GRUPOS</h3>
             {html_partidos}
         </div>
-    </div>
-    """
+    </div>"""
     try:
-        msg = MIMEMultipart()
-        msg['From'] = email_origen
-        msg['To'] = destinatario
-        msg['Subject'] = asunto
+        msg = MIMEMultipart(); msg['From'] = email_origen; msg['To'] = destinatario; msg['Subject'] = asunto
         msg.attach(MIMEText(cuerpo, 'html'))
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(email_origen, password_app)
-        server.sendmail(email_origen, destinatario, msg.as_string())
-        server.quit()
-        return True
+        server = smtplib.SMTP('smtp.gmail.com', 587); server.starttls()
+        server.login(email_origen, password_app); server.sendmail(email_origen, destinatario, msg.as_string())
+        server.quit(); return True
     except: return False
 
 def validar_duplicados_en_sheet(dni_input, email_input):
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
-        contenido = st.secrets["google_json"]["contenido_archivo"]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(contenido, strict=False), scope)
-        client = gspread.authorize(creds)
+        client = obtener_client_gs()
         sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
         if dni_input in sheet.col_values(4): return False, f"⚠️ El DNI {dni_input} ya está registrado."
         if email_input in sheet.col_values(3): return False, f"⚠️ El correo {email_input} ya fue utilizado."
@@ -153,33 +143,74 @@ def validar_duplicados_en_sheet(dni_input, email_input):
     except Exception as e: return False, f"Error validando: {e}"
 
 def guardar_en_google_sheets(datos):
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
-        contenido = st.secrets["google_json"]["contenido_archivo"]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(contenido, strict=False), scope)
-        client = gspread.authorize(creds)
+        client = obtener_client_gs()
         sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
-        
         fila = [
-            datos["Fecha"], datos["Participante"], datos["Email"],
-            datos["DNI"], datos["Edad"], datos["Direccion"],
-            datos["WhatsApp"], datos["Liga"] # <--- LIGA AGREGADA AQUÍ (Col H)
+            datos["Fecha"], datos["Participante"], datos["Email"], datos["DNI"], datos["Edad"], datos["Direccion"],
+            datos["WhatsApp"], datos["Liga"] # Col H
         ]
         for grupo in GRUPOS:
             codigo = grupo.split(" ")[1]
             for i in range(1, 7): fila.append(datos.get(f"P_G{codigo}_{i}", "-"))
         for grupo in GRUPOS: fila.extend([datos[f"{grupo}_1"], datos[f"{grupo}_2"], datos[f"{grupo}_3"]])
-        fila.append(", ".join(datos["Octavos"]))
-        fila.append(", ".join(datos["Cuartos"]))
-        fila.append(", ".join(datos["Semis"]))
+        fila.append(", ".join(datos["Octavos"])); fila.append(", ".join(datos["Cuartos"])); fila.append(", ".join(datos["Semis"]))
         fila.extend([datos["Campeon"], datos["Subcampeon"], datos["Tercero"]])
-        
         sheet.append_row(fila)
         return True
     except Exception as e:
         st.error(f"❌ Error conectando a Google Sheets: {e}")
         return False
 
+# === NUEVA FUNCIÓN: ACTUALIZAR LIGA ===
+def actualizar_liga_existente(dni_check, email_check, nueva_liga):
+    try:
+        client = obtener_client_gs()
+        sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
+        
+        # Buscar la celda donde está el DNI
+        cell_dni = sheet.find(dni_check)
+        
+        if not cell_dni:
+            return False, "❌ DNI no encontrado."
+            
+        row_idx = cell_dni.row
+        
+        # Validar que el Email coincida en esa fila (Columna 3 = C)
+        email_en_sheet = sheet.cell(row_idx, 3).value
+        
+        if email_en_sheet.strip().lower() != email_check.strip().lower():
+            return False, "❌ El Email no coincide con el DNI registrado."
+            
+        # Si todo coincide, actualizamos la Columna 8 (H) -> LIGA
+        sheet.update_cell(row_idx, 8, nueva_liga.upper().strip())
+        return True, "✅ ¡Liga actualizada correctamente!"
+        
+    except Exception as e:
+        return False, f"Error: {e}"
+
+# ==========================================
+# GESTIÓN DE LIGAS (PARA USUARIOS YA REGISTRADOS)
+# ==========================================
+with st.expander("🤝 ¿Ya estás registrado? Súmate o cámbiate de Liga aquí"):
+    st.info("Ingresa tus datos para validar tu identidad y escribe el nombre de la nueva Liga.")
+    c_exist1, c_exist2, c_exist3 = st.columns(3)
+    dni_exist = c_exist1.text_input("Tu DNI (registrado)", key="dni_ex")
+    email_exist = c_exist2.text_input("Tu Email (registrado)", key="email_ex")
+    liga_nueva = c_exist3.text_input("Nombre de la Liga a unirse", key="liga_ex").upper()
+    
+    if st.button("ACTUALIZAR MI LIGA"):
+        if not dni_exist or not email_exist or not liga_nueva:
+            st.error("Completa todos los campos.")
+        else:
+            with st.spinner("Actualizando..."):
+                ok, msg = actualizar_liga_existente(dni_exist, email_exist, liga_nueva)
+                if ok: st.success(msg)
+                else: st.error(msg)
+
+# ==========================================
+# FORMULARIO DE REGISTRO NUEVO
+# ==========================================
 st.markdown("---")
 st.subheader("📜 REGLAMENTO SUPER PRODE USA-MEXICO-CANADA 2026")
 st.info("Reglamento: Suma puntos por aciertos en fases de grupos, playoffs y podio. Criterios de desempate detallados.")
@@ -274,7 +305,7 @@ if st.button("ENVIAR PRONÓSTICO 🚀", type="primary"):
             datos_finales = {
                 "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "Participante": nombre, "Email": email, "DNI": dni, "Edad": edad, "Direccion": direccion,
-                "WhatsApp": whatsapp, "Liga": liga, # <--- SE GUARDA LA LIGA
+                "WhatsApp": whatsapp, "Liga": liga, 
                 **resultados_partidos, **datos_flat,
                 "Octavos": octavos, "Cuartos": cuartos, "Semis": semis,
                 "Campeon": campeon, "Subcampeon": subcampeon, "Tercero": tercero
