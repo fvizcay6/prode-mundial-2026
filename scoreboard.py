@@ -111,6 +111,24 @@ def obtener_todo():
         return datos_p, res_admin, rank_ant
     except: return [], {}, {}
 
+# --- NUEVA: Obtener lista de ligas para el filtro ---
+@st.cache_data(ttl=600)
+def obtener_listado_ligas_existentes():
+    try:
+        client = get_client()
+        sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
+        columna_ligas = sheet.col_values(8)
+        
+        ligas_unicas = set()
+        for celda in columna_ligas[1:]:
+            if celda:
+                partes = celda.split(',')
+                for p in partes:
+                    clean = p.strip().upper()
+                    if clean: ligas_unicas.add(clean)
+        return sorted(list(ligas_unicas))
+    except: return []
+
 # ==========================================
 # 4. FUNCIONES AUXILIARES
 # ==========================================
@@ -143,9 +161,9 @@ def generar_ranking_df(datos_usuarios, resultados_reales, ranking_anterior, filt
     if df.empty: return pd.DataFrame(), pd.DataFrame()
 
     # 2. FILTRO DE LIGA (Lógica Multi-Liga)
-    if filtro_liga:
+    if filtro_liga and filtro_liga != "TODAS":
         filtro_clean = filtro_liga.upper().strip()
-        # Función para ver si la liga está en la lista del usuario
+        
         def pertenece_a_liga(row_liga):
             ligas_usuario = [l.strip() for l in row_liga.split(',')]
             return filtro_clean in ligas_usuario
@@ -161,9 +179,9 @@ def generar_ranking_df(datos_usuarios, resultados_reales, ranking_anterior, filt
     # 4. Calcular Ranking
     df['Rank_Actual'] = df.index + 1
     
-    # 5. Diff (Solo calculamos diff si es Ranking GENERAL)
+    # 5. Diff (Solo calculamos diff si NO hay filtro activo)
     def calc_diff(row):
-        if filtro_liga: return 0 
+        if filtro_liga and filtro_liga != "TODAS": return 0 
         nombre = row['Participante']
         pos_actual = row['Rank_Actual']
         if nombre in ranking_anterior:
@@ -211,13 +229,18 @@ def mostrar_reporte_diario(df_analytics, es_filtrado):
 # ==========================================
 st.title("🏆 RANKING MUNDIAL 2026")
 
-# --- SIDEBAR: BUSCADOR DE LIGAS ---
+# --- SIDEBAR: BUSCADOR DE LIGAS CON SELECTBOX ---
 with st.sidebar:
-    st.header("🕵️ Ligas Privadas")
-    st.info("Escribe el nombre de tu liga para ver el ranking exclusivo.")
-    filtro_liga = st.text_input("Nombre de la Liga", placeholder="Ej: OFICINA2026")
-    if filtro_liga:
-        st.caption(f"Filtrando por: **{filtro_liga.upper()}**")
+    st.header("🕵️ Filtrar por Liga")
+    
+    # 1. Traemos las ligas existentes
+    opciones_ligas = ["TODAS"] + obtener_listado_ligas_existentes()
+    
+    # 2. Mostramos el Selectbox
+    filtro_liga = st.selectbox("Selecciona una Liga:", opciones_ligas)
+    
+    if filtro_liga != "TODAS":
+        st.caption(f"Viendo ranking exclusivo de: **{filtro_liga}**")
         if st.button("❌ Borrar Filtro"):
             st.rerun()
 
@@ -229,7 +252,7 @@ fecha = datetime.datetime.now(pytz.timezone('America/Argentina/Buenos_Aires')).s
 
 if not df_display.empty:
     c1, c2 = st.columns([3, 1])
-    titulo_tabla = f"Resultados: {filtro_liga.upper()}" if filtro_liga else "Ranking General"
+    titulo_tabla = f"Resultados: {filtro_liga}" if filtro_liga != "TODAS" else "Ranking General"
     c1.subheader(f"📊 {titulo_tabla}")
     c1.caption(f"Actualizado: {fecha}")
     if c2.button("🔄 Refrescar"): st.cache_data.clear(); st.rerun()
@@ -241,8 +264,8 @@ if not df_display.empty:
         c3.metric("🥉 TERCERO", df_display.iloc[2]['Participante'].split('(')[0], f"{df_display.iloc[2]['TOTAL']}")
     
     st.markdown("---")
-    mostrar_reporte_diario(df_analytics, filtro_liga is not None)
+    mostrar_reporte_diario(df_analytics, filtro_liga != "TODAS")
     st.dataframe(df_display.style.applymap(color_trend, subset=['Participante']), use_container_width=True, height=800, hide_index=True)
 else:
-    if filtro_liga: st.warning(f"⚠️ No se encontraron participantes en la liga '{filtro_liga}'. Revisa que esté bien escrita.")
+    if filtro_liga != "TODAS": st.warning(f"⚠️ No hay participantes en la liga '{filtro_liga}'.")
     else: st.warning("⏳ Esperando datos...")

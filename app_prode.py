@@ -74,6 +74,28 @@ def obtener_client_gs():
     creds = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(contenido, strict=False), scope)
     return gspread.authorize(creds)
 
+# --- NUEVA FUNCIÓN: Obtener lista de ligas para el desplegable ---
+def obtener_listado_ligas_existentes():
+    try:
+        client = obtener_client_gs()
+        sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
+        # Obtenemos la columna H (índice 8)
+        columna_ligas = sheet.col_values(8)
+        
+        ligas_unicas = set()
+        # Empezamos desde el índice 1 para saltar el encabezado si existe
+        for celda in columna_ligas[1:]:
+            if celda:
+                # Separamos por comas si hay multiples ligas
+                partes = celda.split(',')
+                for p in partes:
+                    clean = p.strip().upper()
+                    if clean: ligas_unicas.add(clean)
+        
+        return sorted(list(ligas_unicas))
+    except:
+        return []
+
 def enviar_correo_confirmacion(datos):
     try:
         email_origen = st.secrets["email_credentials"]["EMAIL_ORIGEN"]
@@ -170,69 +192,62 @@ def guardar_en_google_sheets(datos):
         st.error(f"❌ Error conectando a Google Sheets: {e}")
         return False
 
-# === NUEVA LÓGICA MULTI-LIGA ===
 def actualizar_liga_existente(dni_check, email_check, nueva_liga_input):
     try:
         client = obtener_client_gs()
         sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
-        
-        # 1. Buscar DNI
         cell_dni = sheet.find(dni_check)
         if not cell_dni: return False, "❌ DNI no encontrado."
-            
         row_idx = cell_dni.row
-        
-        # 2. Validar Email
         email_en_sheet = sheet.cell(row_idx, 3).value
         if email_en_sheet.strip().lower() != email_check.strip().lower():
             return False, "❌ El Email no coincide con el DNI registrado."
-            
-        # 3. Obtener Ligas Actuales
-        ligas_actuales_str = sheet.cell(row_idx, 8).value # Col H
+        ligas_actuales_str = sheet.cell(row_idx, 8).value
         nueva_liga = nueva_liga_input.upper().strip()
-        
-        # 4. Lógica de Agregado (Sin duplicar)
-        if not ligas_actuales_str:
-            # Estaba vacío, ponemos la nueva
-            valor_final = nueva_liga
+        if not ligas_actuales_str: valor_final = nueva_liga
         else:
-            # Ya tenía algo, vemos si ya está
             lista_ligas = [x.strip() for x in ligas_actuales_str.split(',')]
-            if nueva_liga in lista_ligas:
-                return False, f"⚠️ Ya estás unido a la liga {nueva_liga}."
-            
-            # Agregamos
+            if nueva_liga in lista_ligas: return False, f"⚠️ Ya estás unido a {nueva_liga}."
             lista_ligas.append(nueva_liga)
             valor_final = ", ".join(lista_ligas)
-            
-        # 5. Guardar
         sheet.update_cell(row_idx, 8, valor_final)
         return True, f"✅ ¡Te has unido a {nueva_liga}! Tus ligas ahora: {valor_final}"
-        
     except Exception as e:
         return False, f"Error: {e}"
 
 # ==========================================
-# SECCIÓN GESTIÓN DE LIGAS
+# GESTIÓN DE LIGAS (PARA USUARIOS YA REGISTRADOS)
 # ==========================================
+# Cargar listado de ligas una vez para usar en los selects
+listado_ligas_db = obtener_listado_ligas_existentes()
+opciones_ligas_existentes = ["Seleccionar..."] + listado_ligas_db + ["➕ CREAR NUEVA LIGA..."]
+
 with st.expander("🤝 ¿Ya estás registrado? Súmate a más Ligas aquí"):
-    st.info("Ingresa tus datos y el nombre de la NUEVA liga a la que quieres unirte. (No te saldrás de las anteriores).")
-    c_exist1, c_exist2, c_exist3 = st.columns(3)
+    st.info("Ingresa tus datos y selecciona la liga.")
+    c_exist1, c_exist2 = st.columns(2)
     dni_exist = c_exist1.text_input("Tu DNI (registrado)", key="dni_ex")
     email_exist = c_exist2.text_input("Tu Email (registrado)", key="email_ex")
-    liga_nueva = c_exist3.text_input("Nombre de la Liga a unirse", key="liga_ex").upper()
     
+    # Selector inteligente
+    liga_seleccionada = st.selectbox("Selecciona la Liga a unirte:", opciones_ligas_existentes, key="sel_liga_ex")
+    
+    liga_final_unirse = ""
+    if liga_seleccionada == "➕ CREAR NUEVA LIGA...":
+        liga_final_unirse = st.text_input("Escribe el nombre de la nueva liga:", key="new_liga_ex").upper().strip()
+    elif liga_seleccionada != "Seleccionar...":
+        liga_final_unirse = liga_seleccionada
+
     if st.button("UNIRME A ESTA LIGA"):
-        if not dni_exist or not email_exist or not liga_nueva:
+        if not dni_exist or not email_exist or not liga_final_unirse:
             st.error("Completa todos los campos.")
         else:
-            with st.spinner("Procesando inscripción a liga..."):
-                ok, msg = actualizar_liga_existente(dni_exist, email_exist, liga_nueva)
+            with st.spinner("Procesando..."):
+                ok, msg = actualizar_liga_existente(dni_exist, email_exist, liga_final_unirse)
                 if ok: st.success(msg)
                 else: st.warning(msg)
 
 # ==========================================
-# RESTO DEL FORMULARIO DE REGISTRO
+# FORMULARIO DE REGISTRO NUEVO
 # ==========================================
 st.markdown("---")
 st.subheader("📜 REGLAMENTO SUPER PRODE USA-MEXICO-CANADA 2026")
@@ -260,9 +275,17 @@ st.markdown("---")
 st.markdown("### 👥 LIGA PRIVADA (Opcional)")
 col_liga, col_info = st.columns([1, 2])
 with col_liga:
-    liga = st.text_input("Nombre o Código de Liga", placeholder="Ej: OFICINA2026").upper().strip()
+    # Selector inteligente para Registro Nuevo
+    liga_reg_sel = st.selectbox("Unirse a Liga existente (Opcional)", ["Sin Liga"] + listado_ligas_db + ["➕ CREAR NUEVA LIGA..."], key="sel_liga_reg")
+    
+    liga_reg_final = ""
+    if liga_reg_sel == "➕ CREAR NUEVA LIGA...":
+        liga_reg_final = st.text_input("Nombre de la nueva liga:", placeholder="Ej: OFICINA2026", key="new_liga_reg").upper().strip()
+    elif liga_reg_sel != "Sin Liga":
+        liga_reg_final = liga_reg_sel
+
 with col_info:
-    st.info("ℹ️ Puedes ingresar múltiples ligas separadas por coma, o agregar más tarde arriba.")
+    st.info("ℹ️ Puedes elegir una liga existente del menú o crear una nueva para tu grupo.")
 
 st.markdown("---")
 st.header("1. FASE DE GRUPOS")
@@ -328,7 +351,7 @@ if st.button("ENVIAR PRONÓSTICO 🚀", type="primary"):
             datos_finales = {
                 "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "Participante": nombre, "Email": email, "DNI": dni, "Edad": edad, "Direccion": direccion,
-                "WhatsApp": whatsapp, "Liga": liga, 
+                "WhatsApp": whatsapp, "Liga": liga_reg_final, 
                 **resultados_partidos, **datos_flat,
                 "Octavos": octavos, "Cuartos": cuartos, "Semis": semis,
                 "Campeon": campeon, "Subcampeon": subcampeon, "Tercero": tercero
