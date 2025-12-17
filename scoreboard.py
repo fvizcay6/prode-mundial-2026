@@ -111,7 +111,7 @@ def obtener_todo():
         return datos_p, res_admin, rank_ant
     except: return [], {}, {}
 
-# --- NUEVA: Obtener lista de ligas para el filtro ---
+# --- Obtener todas las ligas (INCLUIDAS LAS OCULTAS/PREMIUM) ---
 @st.cache_data(ttl=600)
 def obtener_listado_ligas_existentes():
     try:
@@ -233,7 +233,7 @@ st.title("🏆 RANKING MUNDIAL 2026")
 with st.sidebar:
     st.header("🕵️ Filtrar por Liga")
     
-    # 1. Traemos las ligas existentes
+    # 1. Traemos las ligas existentes (INCLUIDAS LAS OCULTAS/PREMIUM)
     opciones_ligas = ["TODAS"] + obtener_listado_ligas_existentes()
     
     # 2. Mostramos el Selectbox
