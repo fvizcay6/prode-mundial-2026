@@ -136,29 +136,34 @@ def generar_ranking_df(datos_usuarios, resultados_reales, ranking_anterior, filt
             "Participante": u["Participante"], "TOTAL": pts["TOTAL"], "Partidos": pts["Partidos"],
             "Grupos": pts["Grupos"], "Octavos": pts["Octavos"], "Cuartos": pts["Cuartos"],
             "Semifinales": pts["Semifinales"], "3ro": pts["Tercer Puesto"], "Final": pts["Final/Campeon"],
-            "Liga": str(u.get("Liga", "")).upper().strip() # Normalizamos la liga
+            "Liga": str(u.get("Liga", "")).upper().strip() # Datos crudos
         })
     df = pd.DataFrame(tabla)
     
     if df.empty: return pd.DataFrame(), pd.DataFrame()
 
-    # 2. FILTRO DE LIGA (Si aplica)
+    # 2. FILTRO DE LIGA (Lógica Multi-Liga)
     if filtro_liga:
-        df = df[df['Liga'] == filtro_liga.upper().strip()]
+        filtro_clean = filtro_liga.upper().strip()
+        # Función para ver si la liga está en la lista del usuario
+        def pertenece_a_liga(row_liga):
+            ligas_usuario = [l.strip() for l in row_liga.split(',')]
+            return filtro_clean in ligas_usuario
+            
+        df = df[df['Liga'].apply(pertenece_a_liga)]
+        
         if df.empty: return pd.DataFrame(), pd.DataFrame()
 
     # 3. Ordenar
     df['Sort'] = df['Octavos'] + df['Cuartos'] + df['Semifinales'] + df['3ro'] + df['Final']
     df = df.sort_values(by=["TOTAL", "Grupos", "Sort"], ascending=False).drop(columns=['Sort']).reset_index(drop=True)
     
-    # 4. Calcular Ranking (Global o de la Liga Filtrada)
+    # 4. Calcular Ranking
     df['Rank_Actual'] = df.index + 1
     
-    # 5. Diff (Solo calculamos diff si es Ranking GENERAL, en Ligas privadas la tendencia no se guarda en el historial)
-    #    (Opcional: Podrías querer ver tendencia global incluso filtrando, pero confunde. Lo dejamos en 0 para ligas)
+    # 5. Diff (Solo calculamos diff si es Ranking GENERAL)
     def calc_diff(row):
-        if filtro_liga: return 0 # En ligas privadas no mostramos diff contra el general
-        
+        if filtro_liga: return 0 
         nombre = row['Participante']
         pos_actual = row['Rank_Actual']
         if nombre in ranking_anterior:
@@ -184,7 +189,7 @@ def generar_ranking_df(datos_usuarios, resultados_reales, ranking_anterior, filt
 # 5. REPORTE
 # ==========================================
 def mostrar_reporte_diario(df_analytics, es_filtrado):
-    if df_analytics.empty or es_filtrado: return # No mostrar reporte en ligas privadas
+    if df_analytics.empty or es_filtrado: return
 
     subidas = df_analytics[df_analytics['Diff'] > 0].sort_values('Diff', ascending=False)
     bajadas = df_analytics[df_analytics['Diff'] < 0].sort_values('Diff', ascending=True)
