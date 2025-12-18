@@ -260,7 +260,7 @@ if st.session_state.paso_actual == 1:
                     else: st.warning(msg)
 
 # ==========================================
-# PASO 1: DATOS + GRUPOS
+# PASO 1: DATOS + GRUPOS (CON ST.FORM PARA QUE NO PARPADEE)
 # ==========================================
 if st.session_state.paso_actual == 1:
     st.markdown("---")
@@ -281,7 +281,6 @@ if st.session_state.paso_actual == 1:
         with st.form("form_paso_1"):
             st.subheader("1️⃣ PASO 1: DATOS Y GRUPOS")
             
-            # Datos Personales
             c1, c2 = st.columns(2)
             nombre = c1.text_input("Nombre y Apellido")
             dni_raw = c2.text_input("DNI / Documento (Sin puntos)")
@@ -292,7 +291,6 @@ if st.session_state.paso_actual == 1:
             edad = c3.number_input("Edad", 0, 100, step=1)
             whatsapp = c4.text_input("WhatsApp / Celular")
             
-            # Liga
             st.markdown("### 👥 LIGA PRIVADA (Opcional)")
             col_liga, col_info = st.columns([1, 2])
             with col_liga:
@@ -303,7 +301,6 @@ if st.session_state.paso_actual == 1:
                 elif liga_reg_sel != "Sin Liga":
                     liga_reg_final = liga_reg_sel
             
-            # Grupos
             st.markdown("---")
             seleccion_grupos = {}
             resultados_partidos = {}
@@ -337,7 +334,6 @@ if st.session_state.paso_actual == 1:
                 if errores:
                     for e in errores: st.error(e)
                 else:
-                    # Guardamos en Session State para el paso 2
                     st.session_state.datos_usuario = {
                         "Nombre": nombre, "DNI": dni, "Email": email, "Direccion": direccion,
                         "Edad": edad, "WhatsApp": whatsapp, "Liga": liga_reg_final,
@@ -348,7 +344,7 @@ if st.session_state.paso_actual == 1:
                     st.rerun()
 
 # ==========================================
-# PASO 2: PLAYOFFS Y ENVÍO FINAL
+# PASO 2: PLAYOFFS (SIN ST.FORM PARA INTERACTIVIDAD REAL)
 # ==========================================
 elif st.session_state.paso_actual == 2:
     st.header("2️⃣ PASO 2: FASES FINALES")
@@ -356,42 +352,50 @@ elif st.session_state.paso_actual == 2:
     
     mis_equipos = st.session_state.equipos_clasificados_usuario
     
-    with st.form("form_paso_2"):
-        octavos = st.multiselect(f"Octavos de Final (Elige 16 de {len(mis_equipos)})", mis_equipos, max_selections=16)
-        cuartos = st.multiselect("Cuartos de Final (Elige 8)", octavos if len(octavos)==16 else [], max_selections=8)
-        semis = st.multiselect("Semifinales (Elige 4)", cuartos if len(cuartos)==8 else [], max_selections=4)
+    # --- AQUÍ YA NO HAY 'with st.form' ---
+    # Esto permite que cuando elijas octavos, se actualicen cuartos al instante.
+    
+    octavos = st.multiselect(f"Octavos de Final (Elige 16 de {len(mis_equipos)})", mis_equipos, max_selections=16)
+    
+    # Lógica dinámica inmediata:
+    opciones_cuartos = octavos if len(octavos) == 16 else []
+    if not opciones_cuartos: st.caption("👆 Completa los 16 de Octavos para habilitar Cuartos.")
+    cuartos = st.multiselect("Cuartos de Final (Elige 8)", opciones_cuartos, max_selections=8)
+    
+    opciones_semis = cuartos if len(cuartos) == 8 else []
+    if not opciones_semis and opciones_cuartos: st.caption("👆 Completa los 8 de Cuartos para habilitar Semis.")
+    semis = st.multiselect("Semifinales (Elige 4)", opciones_semis, max_selections=4)
+    
+    st.divider()
+    st.subheader("🏆 PODIO FINAL")
+    opc_final = semis if len(semis)==4 else []
+    if not opc_final and opciones_semis: st.caption("👆 Completa las Semis para elegir Campeón.")
+    
+    c1, c2, c3 = st.columns(3)
+    campeon = c1.selectbox("CAMPEÓN", ["-"]+opc_final)
+    subcampeon = c2.selectbox("SUBCAMPEÓN", ["-"]+opc_final)
+    tercero = c3.selectbox("3ER PUESTO", ["-"]+opc_final)
+    
+    st.markdown("---")
+    
+    # Botón normal (no de form)
+    if st.button("CONFIRMAR Y ENVIAR PRONÓSTICO 🚀", type="primary"):
+        errores = []
+        if len(octavos)!=16: errores.append(f"Debes elegir 16 en Octavos (elegiste {len(octavos)})")
+        if len(cuartos)!=8: errores.append(f"Debes elegir 8 en Cuartos (elegiste {len(cuartos)})")
+        if len(semis)!=4: errores.append(f"Debes elegir 4 en Semis (elegiste {len(semis)})")
+        if "-" in [campeon, subcampeon, tercero]: errores.append("Falta completar el Podio.")
         
-        st.divider()
-        st.subheader("🏆 PODIO FINAL")
-        opc_final = semis if len(semis)==4 else []
-        c1, c2, c3 = st.columns(3)
-        campeon = c1.selectbox("CAMPEÓN", ["-"]+opc_final)
-        subcampeon = c2.selectbox("SUBCAMPEÓN", ["-"]+opc_final)
-        tercero = c3.selectbox("3ER PUESTO", ["-"]+opc_final)
-        
-        c_atras, c_enviar = st.columns([1, 4])
-        with c_enviar:
-            submitted_final = st.form_submit_button("CONFIRMAR Y ENVIAR PRONÓSTICO 🚀", type="primary")
-        
-        if submitted_final:
-            errores = []
-            if len(octavos)!=16: errores.append(f"Debes elegir 16 en Octavos (elegiste {len(octavos)})")
-            if len(cuartos)!=8: errores.append(f"Debes elegir 8 en Cuartos (elegiste {len(cuartos)})")
-            if len(semis)!=4: errores.append(f"Debes elegir 4 en Semis (elegiste {len(semis)})")
-            if "-" in [campeon, subcampeon, tercero]: errores.append("Falta completar el Podio.")
+        if errores:
+            for e in errores: st.error(e)
+        else:
+            d = st.session_state.datos_usuario
             
-            if errores:
-                for e in errores: st.error(e)
-            else:
-                # Recuperamos datos del paso 1
-                d = st.session_state.datos_usuario
-                
-                # Validamos duplicados en la nube justo antes de guardar final
+            with st.spinner("Guardando en la nube..."):
                 es_valido, mensaje = validar_duplicados_en_sheet(d["DNI"], d["Email"])
                 if not es_valido:
                     st.error(mensaje)
                 else:
-                    # Armamos el paquete final
                     datos_flat = {f"{g}_{i+1}": eq for g, lista in d["Grupos"].items() for i, eq in enumerate(lista)}
                     datos_finales = {
                         "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -408,8 +412,6 @@ elif st.session_state.paso_actual == 2:
                         st.success("✅ ¡PRONÓSTICO GUARDADO CON ÉXITO!")
                         if enviar_correo_confirmacion(datos_finales): 
                             st.success(f"📧 Copia enviada a {d['Email']}")
-                        
-                        # Reset para nuevo usuario
                         time.sleep(5)
                         st.session_state.clear()
                         st.rerun()
