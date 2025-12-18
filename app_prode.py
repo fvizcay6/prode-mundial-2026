@@ -13,8 +13,6 @@ import time
 # ==========================================
 # CONFIGURACIÓN DE LIGAS PRIVADAS (OCULTAS)
 # ==========================================
-# Las ligas que pongas aquí NO aparecerán en el menú desplegable.
-# IMPORTANTE: Escribirlas en MAYÚSCULAS.
 LIGAS_OCULTAS = ["LIGA PREMIUM", "VIP", "ADMINISTRACION"]
 
 # ==========================================
@@ -48,9 +46,8 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 🎵 AMBIENTACIÓN")
     st.components.v1.iframe("https://www.youtube.com/embed/kyXRhggUmG8", height=150)
-    
-    # Botón de pánico para limpiar caché si algo se traba
-    if st.button("🧹 Limpiar Memoria"):
+    if st.button("🧹 Empezar de Cero"):
+        st.session_state.clear()
         st.cache_data.clear()
         st.rerun()
 
@@ -80,42 +77,44 @@ GRUPOS = {
 TODOS_LOS_EQUIPOS = sorted([eq for lista in GRUPOS.values() for eq in lista])
 FIXTURE_INDICES = [(0,1), (2,3), (0,2), (1,3), (0,3), (1,2)]
 
+# ==========================================
+# GESTIÓN DE ESTADO (PARA LOS PASOS)
+# ==========================================
+if 'paso_actual' not in st.session_state:
+    st.session_state.paso_actual = 1
+if 'datos_usuario' not in st.session_state:
+    st.session_state.datos_usuario = {}
+if 'equipos_clasificados_usuario' not in st.session_state:
+    st.session_state.equipos_clasificados_usuario = []
+
 def obtener_client_gs():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     contenido = st.secrets["google_json"]["contenido_archivo"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(contenido, strict=False), scope)
     return gspread.authorize(creds)
 
-# --- PASO 1: DESCARGA DE DATOS (CON CACHÉ 60s) ---
 @st.cache_data(ttl=60) 
 def traer_datos_validacion():
-    """Descarga SOLO las columnas necesarias para validar duplicados y ligas."""
     try:
         client = obtener_client_gs()
         sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
         datos = sheet.get_all_values()
-        
         emails = [fila[2] for fila in datos[1:] if len(fila) > 2]
         dnis = [fila[3] for fila in datos[1:] if len(fila) > 3]
         ligas_raw = [fila[7] for fila in datos[1:] if len(fila) > 7]
-        
         return emails, dnis, ligas_raw
     except Exception as e:
         st.error(f"Error conectando con DB: {e}")
         return [], [], []
 
-# --- PASO 2: FILTRADO DE LIGAS (SIN CACHÉ) ---
-# Al quitar el @st.cache_data de aquí, el filtrado se hace SIEMPRE
-# usando la lista actualizada LIGAS_OCULTAS, sobre los datos descargados previamente.
 def obtener_listado_ligas_existentes():
-    _, _, ligas_columna = traer_datos_validacion() # Usa la caché del paso 1
+    _, _, ligas_columna = traer_datos_validacion()
     ligas_unicas = set()
     for celda in ligas_columna:
         if celda:
             partes = celda.split(',')
             for p in partes:
                 clean = p.strip().upper()
-                # AQUI FILTRAMOS LAS OCULTAS
                 if clean and clean not in LIGAS_OCULTAS:
                     ligas_unicas.add(clean)
     return sorted(list(ligas_unicas))
@@ -212,7 +211,6 @@ def actualizar_liga_existente(dni_check, email_check, nueva_liga_input):
     try:
         nueva_liga = nueva_liga_input.upper().strip()
         if nueva_liga in LIGAS_OCULTAS: return False, "⛔ Esta es una Liga Privada restringida."
-
         client = obtener_client_gs()
         sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
         cell_dni = sheet.find(dni_check)
@@ -222,7 +220,6 @@ def actualizar_liga_existente(dni_check, email_check, nueva_liga_input):
         if email_en_sheet.strip().lower() != email_check.strip().lower():
             return False, "❌ El Email no coincide con el DNI registrado."
         ligas_actuales_str = sheet.cell(row_idx, 8).value
-        
         if not ligas_actuales_str: valor_final = nueva_liga
         else:
             lista_ligas = [x.strip() for x in ligas_actuales_str.split(',')]
@@ -237,181 +234,188 @@ def actualizar_liga_existente(dni_check, email_check, nueva_liga_input):
 # ==========================================
 # GESTIÓN DE LIGAS (PARA USUARIOS YA REGISTRADOS)
 # ==========================================
-# LLAMADA SIN CACHÉ AL FILTRO DE LIGAS
-listado_ligas_db = obtener_listado_ligas_existentes()
-opciones_ligas_existentes = ["Seleccionar..."] + listado_ligas_db + ["➕ CREAR NUEVA LIGA..."]
+if st.session_state.paso_actual == 1:
+    listado_ligas_db = obtener_listado_ligas_existentes()
+    opciones_ligas_existentes = ["Seleccionar..."] + listado_ligas_db + ["➕ CREAR NUEVA LIGA..."]
 
-with st.expander("🤝 ¿Ya estás registrado? Súmate a más Ligas aquí"):
-    st.info("Ingresa tus datos y selecciona la liga.")
-    c_exist1, c_exist2 = st.columns(2)
-    dni_exist = c_exist1.text_input("Tu DNI (registrado)", key="dni_ex")
-    email_exist = c_exist2.text_input("Tu Email (registrado)", key="email_ex")
+    with st.expander("🤝 ¿Ya estás registrado? Súmate a más Ligas aquí"):
+        st.info("Ingresa tus datos y selecciona la liga.")
+        c_exist1, c_exist2 = st.columns(2)
+        dni_exist = c_exist1.text_input("Tu DNI (registrado)", key="dni_ex")
+        email_exist = c_exist2.text_input("Tu Email (registrado)", key="email_ex")
+        liga_seleccionada = st.selectbox("Selecciona la Liga a unirte:", opciones_ligas_existentes, key="sel_liga_ex")
+        liga_final_unirse = ""
+        if liga_seleccionada == "➕ CREAR NUEVA LIGA...":
+            liga_final_unirse = st.text_input("Escribe el nombre de la nueva liga:", key="new_liga_ex").upper().strip()
+        elif liga_seleccionada != "Seleccionar...":
+            liga_final_unirse = liga_seleccionada
+
+        if st.button("UNIRME A ESTA LIGA"):
+            if not dni_exist or not email_exist or not liga_final_unirse:
+                st.error("Completa todos los campos.")
+            else:
+                with st.spinner("Procesando..."):
+                    ok, msg = actualizar_liga_existente(dni_exist, email_exist, liga_final_unirse)
+                    if ok: st.success(msg)
+                    else: st.warning(msg)
+
+# ==========================================
+# PASO 1: DATOS + GRUPOS
+# ==========================================
+if st.session_state.paso_actual == 1:
+    st.markdown("---")
+    st.subheader("📜 REGLAMENTO SUPER PRODE 2026")
+    st.info("""
+    **1. PUNTUACIÓN:**
+    * Grupos: 10 pts Clasificado | 5 pts Posición Exacta | 1 pt Resultado Partido.
+    * Playoffs: Octavos 15 | Cuartos 20 | Semis 25 | Final 40 | Campeón 50.
     
-    liga_seleccionada = st.selectbox("Selecciona la Liga a unirte:", opciones_ligas_existentes, key="sel_liga_ex")
+    **2. DINÁMICA DE CARGA:**
+    * Primero completa tus datos y la Fase de Grupos.
+    * Haz clic en "SIGUIENTE" para desbloquear los Playoffs con TUS clasificados.
+    """)
+    acepta_terminos = st.checkbox("✅ Acepto el reglamento.")
     
-    liga_final_unirse = ""
-    if liga_seleccionada == "➕ CREAR NUEVA LIGA...":
-        liga_final_unirse = st.text_input("Escribe el nombre de la nueva liga:", key="new_liga_ex").upper().strip()
-    elif liga_seleccionada != "Seleccionar...":
-        liga_final_unirse = liga_seleccionada
-
-    if st.button("UNIRME A ESTA LIGA"):
-        if not dni_exist or not email_exist or not liga_final_unirse:
-            st.error("Completa todos los campos.")
-        else:
-            with st.spinner("Procesando..."):
-                ok, msg = actualizar_liga_existente(dni_exist, email_exist, liga_final_unirse)
-                if ok: st.success(msg)
-                else: st.warning(msg)
+    if acepta_terminos:
+        st.markdown("---")
+        with st.form("form_paso_1"):
+            st.subheader("1️⃣ PASO 1: DATOS Y GRUPOS")
+            
+            # Datos Personales
+            c1, c2 = st.columns(2)
+            nombre = c1.text_input("Nombre y Apellido")
+            dni_raw = c2.text_input("DNI / Documento (Sin puntos)")
+            dni = dni_raw.replace(".", "").strip()
+            email = c1.text_input("Correo Electrónico")
+            direccion = c2.text_input("Localidad / Dirección")
+            c3, c4 = st.columns(2)
+            edad = c3.number_input("Edad", 0, 100, step=1)
+            whatsapp = c4.text_input("WhatsApp / Celular")
+            
+            # Liga
+            st.markdown("### 👥 LIGA PRIVADA (Opcional)")
+            col_liga, col_info = st.columns([1, 2])
+            with col_liga:
+                liga_reg_sel = st.selectbox("Unirse a Liga existente", ["Sin Liga"] + listado_ligas_db + ["➕ CREAR NUEVA LIGA..."])
+                liga_reg_final = ""
+                if liga_reg_sel == "➕ CREAR NUEVA LIGA...":
+                    liga_reg_final = st.text_input("Nombre nueva liga:", placeholder="Ej: OFICINA2026").upper().strip()
+                elif liga_reg_sel != "Sin Liga":
+                    liga_reg_final = liga_reg_sel
+            
+            # Grupos
+            st.markdown("---")
+            seleccion_grupos = {}
+            resultados_partidos = {}
+            cols_pantalla = st.columns(2)
+            idx_col = 0
+            for nombre_grupo, equipos in GRUPOS.items():
+                codigo = nombre_grupo.split(" ")[1]
+                with cols_pantalla[idx_col % 2]: 
+                    st.markdown(f"##### {nombre_grupo}")
+                    for i, (idx_L, idx_V) in enumerate(FIXTURE_INDICES):
+                        local, visita = equipos[idx_L], equipos[idx_V]
+                        res = st.radio(f"{local} vs {visita}", ["L", "E", "V"], key=f"P_G{codigo}_{i+1}", horizontal=True)
+                        resultados_partidos[f"P_G{codigo}_{i+1}"] = res
+                    p1 = st.selectbox("1º Clasificado", ["-"]+equipos, key=f"{nombre_grupo}_1")
+                    p2 = st.selectbox("2º Clasificado", ["-"]+equipos, key=f"{nombre_grupo}_2")
+                    p3 = st.selectbox("3º Clasificado", ["-"]+equipos, key=f"{nombre_grupo}_3")
+                    seleccion_grupos[nombre_grupo] = [p1, p2, p3]
+                idx_col += 1
+            
+            submitted_1 = st.form_submit_button("SIGUIENTE PASO ➡️")
+            
+            if submitted_1:
+                errores = []
+                if not nombre or not dni or not email or not whatsapp: errores.append("⚠️ Faltan datos personales.")
+                if liga_reg_final in LIGAS_OCULTAS: errores.append("⛔ Liga restringida.")
+                clasificados_temp = []
+                for g, e in seleccion_grupos.items():
+                    if "-" in e or len(set(e))!=3: errores.append(f"Revisar selección en {g}")
+                    else: clasificados_temp.extend(e)
+                
+                if errores:
+                    for e in errores: st.error(e)
+                else:
+                    # Guardamos en Session State para el paso 2
+                    st.session_state.datos_usuario = {
+                        "Nombre": nombre, "DNI": dni, "Email": email, "Direccion": direccion,
+                        "Edad": edad, "WhatsApp": whatsapp, "Liga": liga_reg_final,
+                        "Grupos": seleccion_grupos, "Partidos": resultados_partidos
+                    }
+                    st.session_state.equipos_clasificados_usuario = sorted(list(set(clasificados_temp)))
+                    st.session_state.paso_actual = 2
+                    st.rerun()
 
 # ==========================================
-# REGLAMENTO
+# PASO 2: PLAYOFFS Y ENVÍO FINAL
 # ==========================================
-st.markdown("---")
-st.subheader("📜 REGLAMENTO SUPER PRODE USA-MEXICO-CANADA 2026")
-
-reglamento_texto = """
-**1. SISTEMA DE PUNTUACIÓN**
-
-* **Fase de Grupos (Clasificados):**
-    * **10 Pts.** por cada equipo clasificado acertado.
-    * **5 Pts.** extra si acierta la posición exacta (1º, 2º o 3º).
-    * Bonus: Se suman los puntos reales que hagan tus equipos en el grupo.
-
-* **Fase de Grupos (Partidos):**
-    * **1 Pt.** por cada resultado acertado (Local, Empate o Visitante).
-
-* **Fases Finales (Playoffs):**
-    * **Octavos:** 15 Pts. | **Cuartos:** 20 Pts. | **Semis:** 25 Pts.
-    * **3er Puesto:** 30 Pts + 35 Pts acierto ganador.
-    * **Final:** 40 Pts. | **Campeón:** 50 Pts.
-
-**2. CRITERIOS DE DESEMPATE**
-1. Mayor puntaje Fase de Grupos. 2. Mayor puntaje Fases Finales. 3. Sorteo.
-
-**3. LIGAS PRIVADAS**
-* Puedes crear o unirte a múltiples ligas privadas.
-* **LIGA PREMIUM:** Existen ligas exclusivas gestionadas por la organización. Si perteneces a una, serás agregado manualmente.
-
-**4. REGLA GENERAL**
-* Un solo formulario por persona.
-"""
-st.info(reglamento_texto)
-acepta_terminos = st.checkbox("✅ He leído, comprendo y ACEPTO el reglamento del juego.")
-
-if not acepta_terminos:
-    st.warning("⚠️ Debes aceptar el reglamento para desbloquear el formulario de inscripción.")
-    st.stop()
-
-# ==========================================
-# DATOS DEL PARTICIPANTE
-# ==========================================
-st.markdown("---")
-st.subheader("👤 DATOS DEL PARTICIPANTE")
-c1, c2 = st.columns(2)
-nombre = c1.text_input("Nombre y Apellido")
-dni_raw = c2.text_input("DNI / Documento (Sin puntos)")
-dni = dni_raw.replace(".", "").strip()
-email = c1.text_input("Correo Electrónico")
-direccion = c2.text_input("Localidad / Dirección")
-
-c3, c4 = st.columns(2)
-edad = c3.number_input("Edad", 0, 100, step=1)
-whatsapp = c4.text_input("WhatsApp / Celular (con cód. área)")
-
-st.markdown("---")
-st.markdown("### 👥 LIGA PRIVADA (Opcional)")
-col_liga, col_info = st.columns([1, 2])
-with col_liga:
-    liga_reg_sel = st.selectbox("Unirse a Liga existente (Opcional)", ["Sin Liga"] + listado_ligas_db + ["➕ CREAR NUEVA LIGA..."], key="sel_liga_reg")
+elif st.session_state.paso_actual == 2:
+    st.header("2️⃣ PASO 2: FASES FINALES")
+    st.success("✅ Fase de grupos guardada temporalmente. Ahora elige a los campeones entre TUS clasificados.")
     
-    liga_reg_final = ""
-    if liga_reg_sel == "➕ CREAR NUEVA LIGA...":
-        liga_reg_final = st.text_input("Nombre de la nueva liga:", placeholder="Ej: OFICINA2026", key="new_liga_reg").upper().strip()
-    elif liga_reg_sel != "Sin Liga":
-        liga_reg_final = liga_reg_sel
+    mis_equipos = st.session_state.equipos_clasificados_usuario
     
-    if liga_reg_final in LIGAS_OCULTAS:
-        st.error("⛔ No puedes unirte a esta Liga Privada por aquí.")
-        liga_reg_final = ""
+    with st.form("form_paso_2"):
+        octavos = st.multiselect(f"Octavos de Final (Elige 16 de {len(mis_equipos)})", mis_equipos, max_selections=16)
+        cuartos = st.multiselect("Cuartos de Final (Elige 8)", octavos if len(octavos)==16 else [], max_selections=8)
+        semis = st.multiselect("Semifinales (Elige 4)", cuartos if len(cuartos)==8 else [], max_selections=4)
+        
+        st.divider()
+        st.subheader("🏆 PODIO FINAL")
+        opc_final = semis if len(semis)==4 else []
+        c1, c2, c3 = st.columns(3)
+        campeon = c1.selectbox("CAMPEÓN", ["-"]+opc_final)
+        subcampeon = c2.selectbox("SUBCAMPEÓN", ["-"]+opc_final)
+        tercero = c3.selectbox("3ER PUESTO", ["-"]+opc_final)
+        
+        c_atras, c_enviar = st.columns([1, 4])
+        with c_enviar:
+            submitted_final = st.form_submit_button("CONFIRMAR Y ENVIAR PRONÓSTICO 🚀", type="primary")
+        
+        if submitted_final:
+            errores = []
+            if len(octavos)!=16: errores.append(f"Debes elegir 16 en Octavos (elegiste {len(octavos)})")
+            if len(cuartos)!=8: errores.append(f"Debes elegir 8 en Cuartos (elegiste {len(cuartos)})")
+            if len(semis)!=4: errores.append(f"Debes elegir 4 en Semis (elegiste {len(semis)})")
+            if "-" in [campeon, subcampeon, tercero]: errores.append("Falta completar el Podio.")
+            
+            if errores:
+                for e in errores: st.error(e)
+            else:
+                # Recuperamos datos del paso 1
+                d = st.session_state.datos_usuario
+                
+                # Validamos duplicados en la nube justo antes de guardar final
+                es_valido, mensaje = validar_duplicados_en_sheet(d["DNI"], d["Email"])
+                if not es_valido:
+                    st.error(mensaje)
+                else:
+                    # Armamos el paquete final
+                    datos_flat = {f"{g}_{i+1}": eq for g, lista in d["Grupos"].items() for i, eq in enumerate(lista)}
+                    datos_finales = {
+                        "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "Participante": d["Nombre"], "Email": d["Email"], "DNI": d["DNI"], 
+                        "Edad": d["Edad"], "Direccion": d["Direccion"], "WhatsApp": d["WhatsApp"], 
+                        "Liga": d["Liga"], 
+                        **d["Partidos"], **datos_flat,
+                        "Octavos": octavos, "Cuartos": cuartos, "Semis": semis,
+                        "Campeon": campeon, "Subcampeon": subcampeon, "Tercero": tercero
+                    }
+                    
+                    if guardar_en_google_sheets(datos_finales):
+                        st.balloons()
+                        st.success("✅ ¡PRONÓSTICO GUARDADO CON ÉXITO!")
+                        if enviar_correo_confirmacion(datos_finales): 
+                            st.success(f"📧 Copia enviada a {d['Email']}")
+                        
+                        # Reset para nuevo usuario
+                        time.sleep(5)
+                        st.session_state.clear()
+                        st.rerun()
+                    else:
+                        st.error("Error al guardar. Intenta nuevamente.")
 
-with col_info:
-    st.info("ℹ️ Elige una liga del menú o crea una nueva. Las Ligas Premium no aparecen aquí.")
-
-# ==========================================
-# JUEGO
-# ==========================================
-st.markdown("---")
-st.header("1. FASE DE GRUPOS")
-seleccion_grupos = {}
-resultados_partidos = {}
-cols_pantalla = st.columns(2)
-idx_col = 0
-
-for nombre_grupo, equipos in GRUPOS.items():
-    codigo = nombre_grupo.split(" ")[1]
-    with cols_pantalla[idx_col % 2]: 
-        with st.expander(f"{nombre_grupo}", expanded=False):
-            st.markdown(f"<h5 style='color:#00FF87; text-align:center;'>{nombre_grupo}</h5>", unsafe_allow_html=True)
-            for i, (idx_L, idx_V) in enumerate(FIXTURE_INDICES):
-                local, visita = equipos[idx_L], equipos[idx_V]
-                st.markdown(f"<div class='match-title'>{local} <span style='color:#00FF87; font-size:12px;'>vs</span> {visita}</div>", unsafe_allow_html=True)
-                res = st.radio(f"{local} vs {visita}", ["L", "E", "V"], key=f"P_G{codigo}_{i+1}", horizontal=True, label_visibility="collapsed")
-                resultados_partidos[f"P_G{codigo}_{i+1}"] = res
-                if i < len(FIXTURE_INDICES) - 1: st.markdown("<div style='margin-bottom: 10px; border-bottom: 1px solid #333;'></div>", unsafe_allow_html=True)
-            st.markdown("<hr style='border-top: 2px solid #00FF87; margin-top: 20px;'>", unsafe_allow_html=True)
-            st.markdown("<div style='text-align:center; margin-bottom:10px;'><b>📊 Clasificados</b></div>", unsafe_allow_html=True)
-            p1 = st.selectbox("1º Clasificado", ["-"]+equipos, key=f"{nombre_grupo}_1")
-            p2 = st.selectbox("2º Clasificado", ["-"]+equipos, key=f"{nombre_grupo}_2")
-            p3 = st.selectbox("3º Clasificado", ["-"]+equipos, key=f"{nombre_grupo}_3")
-            seleccion_grupos[nombre_grupo] = [p1, p2, p3]
-    idx_col += 1
-
-st.divider()
-st.header("2. FASES FINALES")
-equipos_clasificados = sorted(list(set([eq for lista in seleccion_grupos.values() for eq in lista if eq != "-"])))
-if len(equipos_clasificados) < 32: st.info("ℹ️ Completa las posiciones de grupos para ver equipos aquí.")
-octavos = st.multiselect(f"Octavos ({len(equipos_clasificados)} clasificados)", equipos_clasificados, max_selections=16)
-cuartos = st.multiselect("Cuartos (8)", octavos if len(octavos)==16 else [], max_selections=8)
-semis = st.multiselect("Semis (4)", cuartos if len(cuartos)==8 else [], max_selections=4)
-
-st.divider()
-st.header("3. PODIO")
-opc_final = semis if len(semis)==4 else []
-c1, c2, c3 = st.columns(3)
-campeon = c1.selectbox("🏆 CAMPEÓN", ["-"]+opc_final)
-subcampeon = c2.selectbox("🥈 SUBCAMPEÓN", ["-"]+opc_final)
-tercero = c3.selectbox("🥉 3ER PUESTO", ["-"]+opc_final)
-
-st.markdown("---")
-if st.button("ENVIAR PRONÓSTICO 🚀", type="primary"):
-    errores = []
-    if not nombre or not dni or not email or not whatsapp: errores.append("⚠️ Faltan datos personales.")
-    if "@" not in email: errores.append("⚠️ Email inválido.")
-    if len(dni) < 6: errores.append("⚠️ DNI inválido.")
-    for g, e in seleccion_grupos.items():
-        if "-" in e or len(set(e))!=3: errores.append(f"Revisar {g}")
-    if len(octavos)!=16 or len(cuartos)!=8 or len(semis)!=4: errores.append("Falta completar Playoffs.")
-    if "-" in [campeon, subcampeon, tercero]: errores.append("Falta Podio.")
-    
-    if errores:
-        for e in errores: st.error(e)
-    else:
-        with st.spinner("Verificando..."):
-            es_valido, mensaje = validar_duplicados_en_sheet(dni, email)
-        if not es_valido: st.error(mensaje)
-        else:
-            datos_flat = {f"{g}_{i+1}": eq for g, lista in seleccion_grupos.items() for i, eq in enumerate(lista)}
-            datos_finales = {
-                "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "Participante": nombre, "Email": email, "DNI": dni, "Edad": edad, "Direccion": direccion,
-                "WhatsApp": whatsapp, "Liga": liga_reg_final, 
-                **resultados_partidos, **datos_flat,
-                "Octavos": octavos, "Cuartos": cuartos, "Semis": semis,
-                "Campeon": campeon, "Subcampeon": subcampeon, "Tercero": tercero
-            }
-            if guardar_en_google_sheets(datos_finales):
-                st.success("✅ ¡Datos guardados correctamente!")
-                if enviar_correo_confirmacion(datos_finales): st.success(f"📧 Ticket enviado a {email}")
-                st.balloons()
-            else: st.warning("⚠️ Falló el guardado. La red está ocupada, intenta en unos segundos.")
+    if st.button("⬅️ Volver a corregir Grupos"):
+        st.session_state.paso_actual = 1
+        st.rerun()
