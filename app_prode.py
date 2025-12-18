@@ -8,6 +8,14 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
 import json
+import time
+
+# ==========================================
+# CONFIGURACIÓN DE LIGAS PRIVADAS (OCULTAS)
+# ==========================================
+# Las ligas que pongas aquí NO aparecerán en el menú desplegable.
+# IMPORTANTE: Escribirlas en MAYÚSCULAS.
+LIGAS_OCULTAS = ["LIGA PREMIUM", "VIP", "ADMINISTRACION"]
 
 # ==========================================
 # 1. CONFIGURACIÓN VISUAL Y CSS
@@ -22,7 +30,6 @@ st.markdown("""
     .stApp { background-color: #000000; color: #ffffff; }
     p, label, .stMarkdown, .stCaption, .stCheckbox, li { color: #ffffff !important; font-family: 'Helvetica Neue', sans-serif; }
     h1, h2, h3 { font-family: 'Arial Black', sans-serif; background: -webkit-linear-gradient(45deg, #CF00FF, #00FF87); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-transform: uppercase; margin-bottom: 0px; }
-    
     div[role="radiogroup"] { display: flex; justify-content: center !important; width: 100% !important; gap: 15px; margin-bottom: 10px; margin-left: auto !important; margin-right: auto !important; }
     div[role="radiogroup"] label { background-color: #1a1a1a; border: 1px solid #444; padding: 5px 20px; border-radius: 20px; transition: all 0.2s; display: flex; align-items: center; justify-content: center; min-width: 60px; cursor: pointer; }
     div[role="radiogroup"] label:hover { border-color: #00FF87; background-color: #222; }
@@ -41,6 +48,11 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 🎵 AMBIENTACIÓN")
     st.components.v1.iframe("https://www.youtube.com/embed/kyXRhggUmG8", height=150)
+    
+    # Botón de pánico para limpiar caché si algo se traba
+    if st.button("🧹 Limpiar Memoria"):
+        st.cache_data.clear()
+        st.rerun()
 
 c_logo, c_tit = st.columns([1, 5])
 with c_logo:
@@ -74,37 +86,47 @@ def obtener_client_gs():
     creds = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(contenido, strict=False), scope)
     return gspread.authorize(creds)
 
-# --- NUEVA FUNCIÓN: Obtener lista de ligas para el desplegable ---
-def obtener_listado_ligas_existentes():
+# --- PASO 1: DESCARGA DE DATOS (CON CACHÉ 60s) ---
+@st.cache_data(ttl=60) 
+def traer_datos_validacion():
+    """Descarga SOLO las columnas necesarias para validar duplicados y ligas."""
     try:
         client = obtener_client_gs()
         sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
-        # Obtenemos la columna H (índice 8)
-        columna_ligas = sheet.col_values(8)
+        datos = sheet.get_all_values()
         
-        ligas_unicas = set()
-        # Empezamos desde el índice 1 para saltar el encabezado si existe
-        for celda in columna_ligas[1:]:
-            if celda:
-                # Separamos por comas si hay multiples ligas
-                partes = celda.split(',')
-                for p in partes:
-                    clean = p.strip().upper()
-                    if clean: ligas_unicas.add(clean)
+        emails = [fila[2] for fila in datos[1:] if len(fila) > 2]
+        dnis = [fila[3] for fila in datos[1:] if len(fila) > 3]
+        ligas_raw = [fila[7] for fila in datos[1:] if len(fila) > 7]
         
-        return sorted(list(ligas_unicas))
-    except:
-        return []
+        return emails, dnis, ligas_raw
+    except Exception as e:
+        st.error(f"Error conectando con DB: {e}")
+        return [], [], []
+
+# --- PASO 2: FILTRADO DE LIGAS (SIN CACHÉ) ---
+# Al quitar el @st.cache_data de aquí, el filtrado se hace SIEMPRE
+# usando la lista actualizada LIGAS_OCULTAS, sobre los datos descargados previamente.
+def obtener_listado_ligas_existentes():
+    _, _, ligas_columna = traer_datos_validacion() # Usa la caché del paso 1
+    ligas_unicas = set()
+    for celda in ligas_columna:
+        if celda:
+            partes = celda.split(',')
+            for p in partes:
+                clean = p.strip().upper()
+                # AQUI FILTRAMOS LAS OCULTAS
+                if clean and clean not in LIGAS_OCULTAS:
+                    ligas_unicas.add(clean)
+    return sorted(list(ligas_unicas))
 
 def enviar_correo_confirmacion(datos):
     try:
         email_origen = st.secrets["email_credentials"]["EMAIL_ORIGEN"]
         password_app = st.secrets["email_credentials"]["PASSWORD_APP"]
     except: return False
-
     destinatario = datos["Email"]
     asunto = f"🏆 Ticket Oficial Mundial 2026 - {datos['Participante']}"
-    
     html_partidos = ""
     for nombre_grupo, equipos in GRUPOS.items():
         codigo = nombre_grupo.split(" ")[1]
@@ -116,13 +138,10 @@ def enviar_correo_confirmacion(datos):
             res_txt = "EMPATE" if eleccion == "E" else (local if eleccion == "L" else visita)
             html_partidos += f"<span style='font-size: 12px;'>• {local} vs {visita} 👉 <b>{res_txt}</b></span><br>"
         html_partidos += f"<br><span style='font-size: 12px; color: #444;'><i>Clasificados: 1. {p1} | 2. {p2} | 3. {p3}</i></span></div>"
-
     lista_octavos = "".join([f"<div style='margin-left:10px;'>- {eq}</div>" for eq in datos['Octavos']])
     lista_cuartos = "".join([f"<div style='margin-left:10px;'>- {eq}</div>" for eq in datos['Cuartos']])
     lista_semis = "".join([f"<div style='margin-left:10px;'><b>- {eq}</b></div>" for eq in datos['Semis']])
-
     liga_info = f"<p><b>Ligas Privadas:</b> {datos['Liga']}</p>" if datos['Liga'] else ""
-
     cuerpo = f"""
     <div style="font-family: sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; padding: 20px; background-color: #f9f9f9;">
         <div style="text-align: center; background-color: #000; padding: 20px; color: white;">
@@ -136,23 +155,18 @@ def enviar_correo_confirmacion(datos):
             {liga_info}
             <h3 style="color: #CF00FF;">🏆 TU PODIO FINAL</h3>
             <div style="background-color: #eee; padding: 15px; border-radius: 8px; text-align: center; font-size: 18px;">
-                🥇 <b>1º: {datos['Campeon']}</b><br>
-                🥈 2º: {datos['Subcampeon']}<br>
-                🥉 3º: {datos['Tercero']}
+                🥇 <b>1º: {datos['Campeon']}</b><br>🥈 2º: {datos['Subcampeon']}<br>🥉 3º: {datos['Tercero']}
             </div>
             <h3 style="color: #009688;">⚔️ FASES FINALES</h3>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                 <div style="background: #e0f2f1; padding: 10px; border-radius: 5px;"><b>SEMIFINALISTAS (4)</b><br>{lista_semis}</div>
                 <div style="background: #e0f2f1; padding: 10px; border-radius: 5px;"><b>CUARTOS DE FINAL (8)</b><br>{lista_cuartos}</div>
             </div>
-            <div style="background: #f1f8e9; padding: 10px; border-radius: 5px; margin-top: 10px;">
-                <b>OCTAVOS DE FINAL (16)</b><br>{lista_octavos}
-            </div>
+            <div style="background: #f1f8e9; padding: 10px; border-radius: 5px; margin-top: 10px;"><b>OCTAVOS DE FINAL (16)</b><br>{lista_octavos}</div>
             <h3 style="color: #000;">⚽ FASE DE GRUPOS</h3>
             {html_partidos}
         </div>
-    </div>
-    """
+    </div>"""
     try:
         msg = MIMEMultipart(); msg['From'] = email_origen; msg['To'] = destinatario; msg['Subject'] = asunto
         msg.attach(MIMEText(cuerpo, 'html'))
@@ -162,38 +176,43 @@ def enviar_correo_confirmacion(datos):
     except: return False
 
 def validar_duplicados_en_sheet(dni_input, email_input):
-    try:
-        client = obtener_client_gs()
-        sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
-        if dni_input in sheet.col_values(4): return False, f"⚠️ El DNI {dni_input} ya está registrado."
-        if email_input in sheet.col_values(3): return False, f"⚠️ El correo {email_input} ya fue utilizado."
-        return True, "OK"
-    except Exception as e: return False, f"Error validando: {e}"
+    emails, dnis, _ = traer_datos_validacion()
+    if dni_input in dnis: return False, f"⚠️ El DNI {dni_input} ya está registrado."
+    if email_input in emails: return False, f"⚠️ El correo {email_input} ya fue utilizado."
+    return True, "OK"
 
 def guardar_en_google_sheets(datos):
-    try:
-        client = obtener_client_gs()
-        sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
-        fila = [
-            datos["Fecha"], datos["Participante"], datos["Email"],
-            datos["DNI"], datos["Edad"], datos["Direccion"],
-            datos["WhatsApp"], datos["Liga"]
-        ]
-        for grupo in GRUPOS:
-            codigo = grupo.split(" ")[1]
-            for i in range(1, 7): fila.append(datos.get(f"P_G{codigo}_{i}", "-"))
-        for grupo in GRUPOS: fila.extend([datos[f"{grupo}_1"], datos[f"{grupo}_2"], datos[f"{grupo}_3"]])
-        fila.append(", ".join(datos["Octavos"])); fila.append(", ".join(datos["Cuartos"])); fila.append(", ".join(datos["Semis"]))
-        fila.extend([datos["Campeon"], datos["Subcampeon"], datos["Tercero"]])
-        
-        sheet.append_row(fila)
-        return True
-    except Exception as e:
-        st.error(f"❌ Error conectando a Google Sheets: {e}")
-        return False
+    intentos = 0; max_intentos = 3
+    while intentos < max_intentos:
+        try:
+            client = obtener_client_gs()
+            sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
+            fila = [
+                datos["Fecha"], datos["Participante"], datos["Email"],
+                datos["DNI"], datos["Edad"], datos["Direccion"],
+                datos["WhatsApp"], datos["Liga"]
+            ]
+            for grupo in GRUPOS:
+                codigo = grupo.split(" ")[1]
+                for i in range(1, 7): fila.append(datos.get(f"P_G{codigo}_{i}", "-"))
+            for grupo in GRUPOS: fila.extend([datos[f"{grupo}_1"], datos[f"{grupo}_2"], datos[f"{grupo}_3"]])
+            fila.append(", ".join(datos["Octavos"])); fila.append(", ".join(datos["Cuartos"])); fila.append(", ".join(datos["Semis"]))
+            fila.extend([datos["Campeon"], datos["Subcampeon"], datos["Tercero"]])
+            sheet.append_row(fila)
+            traer_datos_validacion.clear()
+            return True
+        except Exception as e:
+            if "429" in str(e):
+                intentos += 1; time.sleep(2)
+            else:
+                st.error(f"❌ Error conectando a Google Sheets: {e}"); return False
+    return False
 
 def actualizar_liga_existente(dni_check, email_check, nueva_liga_input):
     try:
+        nueva_liga = nueva_liga_input.upper().strip()
+        if nueva_liga in LIGAS_OCULTAS: return False, "⛔ Esta es una Liga Privada restringida."
+
         client = obtener_client_gs()
         sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
         cell_dni = sheet.find(dni_check)
@@ -203,7 +222,7 @@ def actualizar_liga_existente(dni_check, email_check, nueva_liga_input):
         if email_en_sheet.strip().lower() != email_check.strip().lower():
             return False, "❌ El Email no coincide con el DNI registrado."
         ligas_actuales_str = sheet.cell(row_idx, 8).value
-        nueva_liga = nueva_liga_input.upper().strip()
+        
         if not ligas_actuales_str: valor_final = nueva_liga
         else:
             lista_ligas = [x.strip() for x in ligas_actuales_str.split(',')]
@@ -211,14 +230,14 @@ def actualizar_liga_existente(dni_check, email_check, nueva_liga_input):
             lista_ligas.append(nueva_liga)
             valor_final = ", ".join(lista_ligas)
         sheet.update_cell(row_idx, 8, valor_final)
+        traer_datos_validacion.clear()
         return True, f"✅ ¡Te has unido a {nueva_liga}! Tus ligas ahora: {valor_final}"
-    except Exception as e:
-        return False, f"Error: {e}"
+    except Exception as e: return False, f"Error: {e}"
 
 # ==========================================
 # GESTIÓN DE LIGAS (PARA USUARIOS YA REGISTRADOS)
 # ==========================================
-# Cargar listado de ligas una vez para usar en los selects
+# LLAMADA SIN CACHÉ AL FILTRO DE LIGAS
 listado_ligas_db = obtener_listado_ligas_existentes()
 opciones_ligas_existentes = ["Seleccionar..."] + listado_ligas_db + ["➕ CREAR NUEVA LIGA..."]
 
@@ -228,7 +247,6 @@ with st.expander("🤝 ¿Ya estás registrado? Súmate a más Ligas aquí"):
     dni_exist = c_exist1.text_input("Tu DNI (registrado)", key="dni_ex")
     email_exist = c_exist2.text_input("Tu Email (registrado)", key="email_ex")
     
-    # Selector inteligente
     liga_seleccionada = st.selectbox("Selecciona la Liga a unirte:", opciones_ligas_existentes, key="sel_liga_ex")
     
     liga_final_unirse = ""
@@ -247,17 +265,47 @@ with st.expander("🤝 ¿Ya estás registrado? Súmate a más Ligas aquí"):
                 else: st.warning(msg)
 
 # ==========================================
-# FORMULARIO DE REGISTRO NUEVO
+# REGLAMENTO
 # ==========================================
 st.markdown("---")
 st.subheader("📜 REGLAMENTO SUPER PRODE USA-MEXICO-CANADA 2026")
-st.info("Reglamento: Suma puntos por aciertos en fases de grupos, playoffs y podio. Criterios de desempate detallados.")
+
+reglamento_texto = """
+**1. SISTEMA DE PUNTUACIÓN**
+
+* **Fase de Grupos (Clasificados):**
+    * **10 Pts.** por cada equipo clasificado acertado.
+    * **5 Pts.** extra si acierta la posición exacta (1º, 2º o 3º).
+    * Bonus: Se suman los puntos reales que hagan tus equipos en el grupo.
+
+* **Fase de Grupos (Partidos):**
+    * **1 Pt.** por cada resultado acertado (Local, Empate o Visitante).
+
+* **Fases Finales (Playoffs):**
+    * **Octavos:** 15 Pts. | **Cuartos:** 20 Pts. | **Semis:** 25 Pts.
+    * **3er Puesto:** 30 Pts + 35 Pts acierto ganador.
+    * **Final:** 40 Pts. | **Campeón:** 50 Pts.
+
+**2. CRITERIOS DE DESEMPATE**
+1. Mayor puntaje Fase de Grupos. 2. Mayor puntaje Fases Finales. 3. Sorteo.
+
+**3. LIGAS PRIVADAS**
+* Puedes crear o unirte a múltiples ligas privadas.
+* **LIGA PREMIUM:** Existen ligas exclusivas gestionadas por la organización. Si perteneces a una, serás agregado manualmente.
+
+**4. REGLA GENERAL**
+* Un solo formulario por persona.
+"""
+st.info(reglamento_texto)
 acepta_terminos = st.checkbox("✅ He leído, comprendo y ACEPTO el reglamento del juego.")
 
 if not acepta_terminos:
     st.warning("⚠️ Debes aceptar el reglamento para desbloquear el formulario de inscripción.")
     st.stop()
 
+# ==========================================
+# DATOS DEL PARTICIPANTE
+# ==========================================
 st.markdown("---")
 st.subheader("👤 DATOS DEL PARTICIPANTE")
 c1, c2 = st.columns(2)
@@ -275,7 +323,6 @@ st.markdown("---")
 st.markdown("### 👥 LIGA PRIVADA (Opcional)")
 col_liga, col_info = st.columns([1, 2])
 with col_liga:
-    # Selector inteligente para Registro Nuevo
     liga_reg_sel = st.selectbox("Unirse a Liga existente (Opcional)", ["Sin Liga"] + listado_ligas_db + ["➕ CREAR NUEVA LIGA..."], key="sel_liga_reg")
     
     liga_reg_final = ""
@@ -283,10 +330,17 @@ with col_liga:
         liga_reg_final = st.text_input("Nombre de la nueva liga:", placeholder="Ej: OFICINA2026", key="new_liga_reg").upper().strip()
     elif liga_reg_sel != "Sin Liga":
         liga_reg_final = liga_reg_sel
+    
+    if liga_reg_final in LIGAS_OCULTAS:
+        st.error("⛔ No puedes unirte a esta Liga Privada por aquí.")
+        liga_reg_final = ""
 
 with col_info:
-    st.info("ℹ️ Puedes elegir una liga existente del menú o crear una nueva para tu grupo.")
+    st.info("ℹ️ Elige una liga del menú o crea una nueva. Las Ligas Premium no aparecen aquí.")
 
+# ==========================================
+# JUEGO
+# ==========================================
 st.markdown("---")
 st.header("1. FASE DE GRUPOS")
 seleccion_grupos = {}
@@ -360,4 +414,4 @@ if st.button("ENVIAR PRONÓSTICO 🚀", type="primary"):
                 st.success("✅ ¡Datos guardados correctamente!")
                 if enviar_correo_confirmacion(datos_finales): st.success(f"📧 Ticket enviado a {email}")
                 st.balloons()
-            else: st.warning("⚠️ Falló el guardado.")
+            else: st.warning("⚠️ Falló el guardado. La red está ocupada, intenta en unos segundos.")
