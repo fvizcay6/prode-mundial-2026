@@ -260,20 +260,30 @@ if st.session_state.paso_actual == 1:
                     else: st.warning(msg)
 
 # ==========================================
-# PASO 1: DATOS + GRUPOS (CON ST.FORM PARA QUE NO PARPADEE)
+# PASO 1: DATOS + GRUPOS (CON ST.FORM)
 # ==========================================
 if st.session_state.paso_actual == 1:
     st.markdown("---")
     st.subheader("📜 REGLAMENTO SUPER PRODE 2026")
+    # --- TEXTO DE REGLAMENTO ACTUALIZADO ---
     st.info("""
-    **1. PUNTUACIÓN:**
-    * Grupos: 10 pts Clasificado | 5 pts Posición Exacta | 1 pt Resultado Partido.
-    * Playoffs: Octavos 15 | Cuartos 20 | Semis 25 | Final 40 | Campeón 50.
-    
-    **2. DINÁMICA DE CARGA:**
-    * Primero completa tus datos y la Fase de Grupos.
-    * Haz clic en "SIGUIENTE" para desbloquear los Playoffs con TUS clasificados.
+    **1. SISTEMA DE PUNTUACIÓN**
+    * **Fase de Grupos:** 10 pts por Clasificado | 5 pts extra por Posición Exacta | 1 pt por Resultado de Partido acertado.
+    * **Bonus:** Se suman los puntos reales que tus equipos logren en el grupo.
+    * **Playoffs:** Octavos 15 pts | Cuartos 20 pts | Semis 25 pts.
+    * **Finales:** 3er Puesto 30 pts (+35 si aciertas ganador) | Finalista 40 pts | Campeón 50 pts.
+
+    **2. LIGAS PRIVADAS Y MULTI-LIGA**
+    * **Crear Ligas:** Puedes crear tu propia Liga Privada seleccionando "CREAR NUEVA LIGA" en el menú de inscripción.
+    * **Multi-Liga:** ¡Puedes participar en varias ligas a la vez! Si ya te inscribiste, usa el panel superior "Súmate a más Ligas" para agregarte a otros grupos sin perder tus datos anteriores.
+    * **Ligas Premium:** Existen ligas exclusivas gestionadas por la organización que no aparecen en el menú público.
+
+    **3. DINÁMICA DE CARGA (IMPORTANTE)**
+    * **PASO 1:** Completa tus Datos y la Fase de Grupos. Al final, haz clic en **"SIGUIENTE PASO"**.
+    * **PASO 2:** El sistema desbloqueará las Fases Finales permitiéndote elegir solo entre **TUS** equipos clasificados.
     """)
+    # ----------------------------------------
+    
     acepta_terminos = st.checkbox("✅ Acepto el reglamento.")
     
     if acepta_terminos:
@@ -344,7 +354,7 @@ if st.session_state.paso_actual == 1:
                     st.rerun()
 
 # ==========================================
-# PASO 2: PLAYOFFS (SIN ST.FORM PARA INTERACTIVIDAD REAL)
+# PASO 2: PLAYOFFS (SIN ST.FORM)
 # ==========================================
 elif st.session_state.paso_actual == 2:
     st.header("2️⃣ PASO 2: FASES FINALES")
@@ -352,12 +362,8 @@ elif st.session_state.paso_actual == 2:
     
     mis_equipos = st.session_state.equipos_clasificados_usuario
     
-    # --- AQUÍ YA NO HAY 'with st.form' ---
-    # Esto permite que cuando elijas octavos, se actualicen cuartos al instante.
-    
     octavos = st.multiselect(f"Octavos de Final (Elige 16 de {len(mis_equipos)})", mis_equipos, max_selections=16)
     
-    # Lógica dinámica inmediata:
     opciones_cuartos = octavos if len(octavos) == 16 else []
     if not opciones_cuartos: st.caption("👆 Completa los 16 de Octavos para habilitar Cuartos.")
     cuartos = st.multiselect("Cuartos de Final (Elige 8)", opciones_cuartos, max_selections=8)
@@ -378,7 +384,6 @@ elif st.session_state.paso_actual == 2:
     
     st.markdown("---")
     
-    # Botón normal (no de form)
     if st.button("CONFIRMAR Y ENVIAR PRONÓSTICO 🚀", type="primary"):
         errores = []
         if len(octavos)!=16: errores.append(f"Debes elegir 16 en Octavos (elegiste {len(octavos)})")
