@@ -90,7 +90,7 @@ with c_tit:
 if not esta_habilitado:
     st.error(f"⛔ **INSCRIPCIONES CERRADAS**")
     st.warning(f"El tiempo límite para cargar tu pronóstico finalizó el {texto_limite}.")
-    st.info("¡Gracias a todos por participar! Ya puedes consultar los resultados en el Ranking.")
+    st.info("¡Gracias a todos por participar! Ya puedes consultar los resultados en el Ranking.https://appe-mundial-2026-wgkggumkwsthcrnsqnepcn.streamlit.app/")
     st.stop() # DETIENE LA EJECUCIÓN AQUÍ
 
 # ==========================================
