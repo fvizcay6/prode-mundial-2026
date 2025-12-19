@@ -16,7 +16,7 @@ import pytz # <--- NECESARIO PARA LA HORA ARGENTINA
 # ==========================================
 # FECHA TOPE PARA INSCRIBIRSE (Formato: AAAA-MM-DD HH:MM)
 # Hora de Argentina
-FECHA_LIMITE = "2026-06-11 12:00" 
+FECHA_LIMITE = "2025-06-11 12:00" 
 
 # LIGAS OCULTAS (No aparecen en el menú)
 LIGAS_OCULTAS = ["LIGA PREMIUM", "VIP", "ADMINISTRACION"]
