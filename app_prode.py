@@ -9,10 +9,16 @@ from email.mime.multipart import MIMEMultipart
 import os
 import json
 import time
+import pytz # <--- NECESARIO PARA LA HORA ARGENTINA
 
 # ==========================================
-# CONFIGURACIÓN DE LIGAS PRIVADAS (OCULTAS)
+# ⚙️ CONFIGURACIÓN GENERAL (EDITAR AQUÍ)
 # ==========================================
+# FECHA TOPE PARA INSCRIBIRSE (Formato: AAAA-MM-DD HH:MM)
+# Hora de Argentina
+FECHA_LIMITE = "2026-06-11 12:00" 
+
+# LIGAS OCULTAS (No aparecen en el menú)
 LIGAS_OCULTAS = ["LIGA PREMIUM", "VIP", "ADMINISTRACION"]
 
 # ==========================================
@@ -40,16 +46,35 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# ==========================================
+# 2. VALIDACIÓN DE FECHA LÍMITE
+# ==========================================
+def verificar_fecha_limite():
+    tz_ar = pytz.timezone('America/Argentina/Buenos_Aires')
+    ahora = datetime.now(tz_ar)
+    
+    # Convertimos el string de config a objeto fecha con zona horaria
+    fecha_dt = datetime.strptime(FECHA_LIMITE, "%Y-%m-%d %H:%M")
+    limite = tz_ar.localize(fecha_dt)
+    
+    if ahora > limite:
+        return False, limite.strftime("%d/%m/%Y a las %H:%M hs")
+    return True, limite.strftime("%d/%m/%Y a las %H:%M hs")
+
+esta_habilitado, texto_limite = verificar_fecha_limite()
+
 with st.sidebar:
     if os.path.exists("logo.jpg"): st.image("logo.jpg", use_container_width=True)
     elif os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
     st.markdown("---")
     st.markdown("### 🎵 AMBIENTACIÓN")
     st.components.v1.iframe("https://www.youtube.com/embed/kyXRhggUmG8", height=150)
-    if st.button("🧹 Empezar de Cero"):
-        st.session_state.clear()
-        st.cache_data.clear()
-        st.rerun()
+    
+    if esta_habilitado:
+        if st.button("🧹 Empezar de Cero"):
+            st.session_state.clear()
+            st.cache_data.clear()
+            st.rerun()
 
 c_logo, c_tit = st.columns([1, 5])
 with c_logo:
@@ -58,6 +83,19 @@ with c_logo:
 with c_tit:
     st.title("FIFA WORLD CUP 2026")
     st.markdown("### OFFICIAL PREDICTION GAME")
+
+# ==========================================
+# ⛔ BLOQUEO SI VENCIÓ LA FECHA
+# ==========================================
+if not esta_habilitado:
+    st.error(f"⛔ **INSCRIPCIONES CERRADAS**")
+    st.warning(f"El tiempo límite para cargar tu pronóstico finalizó el {texto_limite}.")
+    st.info("¡Gracias a todos por participar! Ya puedes consultar los resultados en el Ranking.")
+    st.stop() # DETIENE LA EJECUCIÓN AQUÍ
+
+# ==========================================
+# ... CONTINÚA EL CÓDIGO NORMAL ...
+# ==========================================
 
 NOMBRE_HOJA_GOOGLE = "DB_Prode_2026"
 GRUPOS = {
@@ -77,9 +115,6 @@ GRUPOS = {
 TODOS_LOS_EQUIPOS = sorted([eq for lista in GRUPOS.values() for eq in lista])
 FIXTURE_INDICES = [(0,1), (2,3), (0,2), (1,3), (0,3), (1,2)]
 
-# ==========================================
-# GESTIÓN DE ESTADO (PARA LOS PASOS)
-# ==========================================
 if 'paso_actual' not in st.session_state:
     st.session_state.paso_actual = 1
 if 'datos_usuario' not in st.session_state:
@@ -265,8 +300,9 @@ if st.session_state.paso_actual == 1:
 if st.session_state.paso_actual == 1:
     st.markdown("---")
     st.subheader("📜 REGLAMENTO SUPER PRODE 2026")
-    # --- TEXTO DE REGLAMENTO ACTUALIZADO ---
-    st.info("""
+    
+    # --- AQUI SE MUESTRA LA FECHA DINAMICAMENTE ---
+    st.info(f"""
     **1. SISTEMA DE PUNTUACIÓN**
     * **Fase de Grupos:** 10 pts por Clasificado | 5 pts extra por Posición Exacta | 1 pt por Resultado de Partido acertado.
     * **Bonus:** Se suman los puntos reales que tus equipos logren en el grupo.
@@ -275,14 +311,16 @@ if st.session_state.paso_actual == 1:
 
     **2. LIGAS PRIVADAS Y MULTI-LIGA**
     * **Crear Ligas:** Puedes crear tu propia Liga Privada seleccionando "CREAR NUEVA LIGA" en el menú de inscripción.
-    * **Multi-Liga:** ¡Puedes participar en varias ligas a la vez! Si ya te inscribiste, usa el panel superior "Súmate a más Ligas" para agregarte a otros grupos sin perder tus datos anteriores.
-    * **Ligas Premium:** Existen ligas exclusivas gestionadas por la organización que no aparecen en el menú público.
+    * **Multi-Liga:** ¡Puedes participar en varias ligas a la vez!
+    * **Ligas Premium:** Existen ligas exclusivas gestionadas por la organización.
 
-    **3. DINÁMICA DE CARGA (IMPORTANTE)**
-    * **PASO 1:** Completa tus Datos y la Fase de Grupos. Al final, haz clic en **"SIGUIENTE PASO"**.
-    * **PASO 2:** El sistema desbloqueará las Fases Finales permitiéndote elegir solo entre **TUS** equipos clasificados.
+    **3. DINÁMICA DE CARGA**
+    * **PASO 1:** Completa tus Datos y la Fase de Grupos.
+    * **PASO 2:** Elige las Fases Finales con TUS clasificados.
+    
+    **4. FECHA LÍMITE DE INSCRIPCIÓN**
+    * ⚠️ Tienes tiempo para cargar o modificar tu pronóstico hasta el: **{texto_limite}**. Pasada esa fecha, el formulario se bloqueará automáticamente.
     """)
-    # ----------------------------------------
     
     acepta_terminos = st.checkbox("✅ Acepto el reglamento.")
     
