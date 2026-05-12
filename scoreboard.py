@@ -265,7 +265,7 @@ if not df_display.empty:
     
     st.markdown("---")
     mostrar_reporte_diario(df_analytics, filtro_liga != "TODAS")
-    st.dataframe(df_display.style.applymap(color_trend, subset=['Participante']), use_container_width=True, height=800, hide_index=True)
+    st.dataframe(df_display.style.map(color_trend, subset=['Participante']), use_container_width=True, height=800, hide_index=True)
 else:
     if filtro_liga != "TODAS": st.warning(f"⚠️ No hay participantes en la liga '{filtro_liga}'.")
     else: st.warning("⏳ Esperando datos...")
