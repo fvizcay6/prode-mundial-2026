@@ -158,7 +158,10 @@ def enviar_correo_confirmacion(datos):
     try:
         email_origen = st.secrets["email_credentials"]["EMAIL_ORIGEN"]
         password_app = st.secrets["email_credentials"]["PASSWORD_APP"]
-    except: return False
+    except Exception as e: 
+        st.error(f"Faltan credenciales de correo en los secrets: {e}")
+        return False
+        
     destinatario = datos["Email"]
     asunto = f"🏆 Ticket Oficial Mundial 2026 - {datos['Participante']}"
     html_partidos = ""
@@ -203,7 +206,6 @@ def enviar_correo_confirmacion(datos):
     </div>"""
     try:
         msg = MIMEMultipart(); msg['From'] = email_origen; msg['To'] = destinatario; msg['Subject'] = asunto
-        # --- AQUÍ ESTÁ EL CAMBIO ---
         msg.attach(MIMEText(cuerpo, 'html', 'utf-8'))
         server = smtplib.SMTP('smtp.gmail.com', 587); server.starttls()
         server.login(email_origen, password_app); server.sendmail(email_origen, destinatario, msg.as_string())
@@ -304,7 +306,6 @@ if st.session_state.paso_actual == 1:
     st.markdown("---")
     st.subheader("📜 REGLAMENTO SUPER PRODE 2026")
     
-    # --- AQUI SE MUESTRA LA FECHA DINAMICAMENTE ---
     st.info(f"""
     **1. SISTEMA DE PUNTUACIÓN**
     * **Fase de Grupos:** 10 pts por Clasificado | 5 pts extra por Posición Exacta | 1 pt por Resultado de Partido acertado.
@@ -456,11 +457,17 @@ elif st.session_state.paso_actual == 2:
                     if guardar_en_google_sheets(datos_finales):
                         st.balloons()
                         st.success("✅ ¡PRONÓSTICO GUARDADO CON ÉXITO!")
-                        if enviar_correo_confirmacion(datos_finales): 
+                        
+                        # AQUI ESTA LA TRAMPA:
+                        correo_enviado = enviar_correo_confirmacion(datos_finales)
+                        
+                        if correo_enviado: 
                             st.success(f"📧 Copia enviada a {d['Email']}")
-                        time.sleep(5)
-                        st.session_state.clear()
-                        st.rerun()
+                            time.sleep(5)
+                            st.session_state.clear()
+                            st.rerun()
+                        else:
+                            st.warning("👆 Tu prode ya está guardado en el Excel, pero falló el correo. Saca foto o copia el error rojo de arriba para poder solucionarlo.")
                     else:
                         st.error("Error al guardar. Intenta nuevamente.")
 
