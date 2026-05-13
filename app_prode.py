@@ -203,11 +203,14 @@ def enviar_correo_confirmacion(datos):
     </div>"""
     try:
         msg = MIMEMultipart(); msg['From'] = email_origen; msg['To'] = destinatario; msg['Subject'] = asunto
-        msg.attach(MIMEText(cuerpo, 'html'))
+        # --- AQUÍ ESTÁ EL CAMBIO ---
+        msg.attach(MIMEText(cuerpo, 'html', 'utf-8'))
         server = smtplib.SMTP('smtp.gmail.com', 587); server.starttls()
         server.login(email_origen, password_app); server.sendmail(email_origen, destinatario, msg.as_string())
         server.quit(); return True
-    except: return False
+    except Exception as e:
+        st.error(f"Error técnico enviando el correo: {e}")
+        return False
 
 def validar_duplicados_en_sheet(dni_input, email_input):
     emails, dnis, _ = traer_datos_validacion()
