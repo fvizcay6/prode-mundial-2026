@@ -43,13 +43,13 @@ def calcular_puntaje_participante(datos_usuario, reales):
             if res_real != "-" and datos_usuario.get(key, "-") == res_real: pts_partidos += 1
     puntos += pts_partidos; desglose['Partidos'] = pts_partidos
 
-    # 2. Grupos
+    # 2. Grupos (Vuelto a la normalidad estricta de los 3 clasificados: 635 pts)
     pts_grupos = 0
     if "GRUPOS" in reales:
         for grupo, data in reales["GRUPOS"].items():
             if data.get("1", "-") != "-" and data.get("2", "-") != "-" and data.get("3", "-") != "-":
                 real_top3 = [data["1"], data["2"], data["3"]]
-                pts_reales = {data["1"]: data.get("pts_1",0), data["2"]: data.get("pts_2",0), data["3"]: data.get("pts_3",0)}
+                pts_reales = {data["1"]: data.get("pts_1", 0), data["2"]: data.get("pts_2", 0), data["3"]: data.get("pts_3", 0)}
                 for i in [1,2,3]:
                     u_eq = datos_usuario.get(f"{grupo}_{i}"); r_eq = data[str(i)]
                     if u_eq in real_top3:
@@ -111,23 +111,17 @@ def obtener_todo():
         return datos_p, res_admin, rank_ant
     except: return [], {}, {}
 
-# --- Obtener todas las ligas (INCLUIDAS LAS OCULTAS/PREMIUM) ---
-@st.cache_data(ttl=600)
-def obtener_listado_ligas_existentes():
-    try:
-        client = get_client()
-        sheet = client.open(NOMBRE_HOJA_GOOGLE).sheet1
-        columna_ligas = sheet.col_values(8)
-        
-        ligas_unicas = set()
-        for celda in columna_ligas[1:]:
-            if celda:
-                partes = celda.split(',')
-                for p in partes:
-                    clean = p.strip().upper()
-                    if clean: ligas_unicas.add(clean)
-        return sorted(list(ligas_unicas))
-    except: return []
+# --- Obtener todas las ligas optimizado (Lee desde memoria local) ---
+def obtener_listado_ligas_existentes_optimizado(datos_usuarios):
+    ligas_unicas = set()
+    for u in datos_usuarios:
+        celda = u.get("Liga", "")
+        if celda:
+            partes = str(celda).split(',')
+            for p in partes:
+                clean = p.strip().upper()
+                if clean: ligas_unicas.add(clean)
+    return sorted(list(ligas_unicas))
 
 # ==========================================
 # 4. FUNCIONES AUXILIARES
@@ -154,7 +148,7 @@ def generar_ranking_df(datos_usuarios, resultados_reales, ranking_anterior, filt
             "Participante": u["Participante"], "TOTAL": pts["TOTAL"], "Partidos": pts["Partidos"],
             "Grupos": pts["Grupos"], "Octavos": pts["Octavos"], "Cuartos": pts["Cuartos"],
             "Semifinales": pts["Semifinales"], "3ro": pts["Tercer Puesto"], "Final": pts["Final/Campeon"],
-            "Liga": str(u.get("Liga", "")).upper().strip() # Datos crudos
+            "Liga": str(u.get("Liga", "")).upper().strip() 
         })
     df = pd.DataFrame(tabla)
     
@@ -222,30 +216,29 @@ def mostrar_reporte_diario(df_analytics, es_filtrado):
                 if not bajadas.empty:
                      st.markdown(f"<div class='report-card'><div class='report-title'>📉 CAÍDA LIBRE</div><div class='report-stat'>{bajadas.iloc[0]['Participante']}</div><div class='report-desc'>Perdió {abs(bajadas.iloc[0]['Diff'])} puestos.</div></div>", unsafe_allow_html=True)
             with r3:
-                st.markdown(f"<div class='report-card'><div class='report-title'>📊 MOVIMIENTOS</div><div class='report-desc'>🟢 {len(subidas)} Subieron<br>🔴 {len(bajadas)} Bajaron</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='report-card'><div class='report-title'>📊 MOVIMIENTOS</div><div class='report-desc'>🦄 {len(subidas)} Subieron<br>🔴 {len(bajadas)} Bajaron</div></div>", unsafe_allow_html=True)
 
 # ==========================================
 # 6. APP PRINCIPAL
 # ==========================================
 st.title("🏆 RANKING MUNDIAL 2026")
 
+# Traemos la base de datos completa primero
+datos_p, res_admin, rank_ant = obtener_todo()
+if not res_admin: res_admin = { "PARTIDOS": {}, "GRUPOS": {}, "OCTAVOS": [], "CUARTOS": [], "SEMIS": [], "TERCERO_GANADOR": "-", "FINALISTAS": [], "CAMPEON": "-", "SUBCAMPEON": "-" }
+
 # --- SIDEBAR: BUSCADOR DE LIGAS CON SELECTBOX ---
 with st.sidebar:
     st.header("🕵️ Filtrar por Liga")
     
-    # 1. Traemos las ligas existentes (INCLUIDAS LAS OCULTAS/PREMIUM)
-    opciones_ligas = ["TODAS"] + obtener_listado_ligas_existentes()
-    
-    # 2. Mostramos el Selectbox
+    # Fix: Generamos el listado usando los datos en memoria para evitar caídas
+    opciones_ligas = ["TODAS"] + obtener_listado_ligas_existentes_optimizado(datos_p)
     filtro_liga = st.selectbox("Selecciona una Liga:", opciones_ligas)
     
     if filtro_liga != "TODAS":
         st.caption(f"Viendo ranking exclusivo de: **{filtro_liga}**")
         if st.button("❌ Borrar Filtro"):
             st.rerun()
-
-datos_p, res_admin, rank_ant = obtener_todo()
-if not res_admin: res_admin = { "PARTIDOS": {}, "GRUPOS": {}, "OCTAVOS": [], "CUARTOS": [], "SEMIS": [], "TERCERO_GANADOR": "-", "FINALISTAS": [], "CAMPEON": "-", "SUBCAMPEON": "-" }
 
 df_display, df_analytics = generar_ranking_df(datos_p, res_admin, rank_ant, filtro_liga)
 fecha = datetime.datetime.now(pytz.timezone('America/Argentina/Buenos_Aires')).strftime("%d/%m %H:%M")
